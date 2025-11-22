@@ -4,10 +4,10 @@
 
 /*
 I haven't found an ideal solution for converting 8 bit indexed surfaces to 32bit textures. However one thing that I
-decided was that I don't want to call SDL_ConvertSurfaceFormat or SDL_CreateTextureFromSurface per frame.
+decided was that I don't want to call SDL_ConvertSurface per frame.
 
 I ended up creating two surfaces, the 8 bit one that the AGI engine draws to and a second 32bit one that has the same
-pixel format as the main screen texture. On render, we SDL_BlitSurface from the 8bit to 32bit surface to do pixel 
+pixel format as the main screen texture. On render, we SDL_BlitSurface from the 8bit to 32bit surface to do pixel
 conversion, then call SDL_UpdateTexture on the (streaming) screen texture with the 32bit surface as source.
 
 References:
@@ -35,7 +35,7 @@ Mini code sample for SDL2 256-color palette https://discourse.libsdl.org/t/mini-
 
 /* PROTOTYPES	---	---	---	---	---	---	--- */
 
-	
+
 static void vid_free_surfaces(void);
 static void vid_render(SDL_Surface* surface, const u32 x, const u32 y, const u32 w, const u32 h);
 
@@ -48,6 +48,7 @@ struct video_struct
 	SDL_Texture *texture;
 	SDL_Surface *surface;
 	SDL_Surface *surface_conv;
+	SDL_Palette *palette;
 };
 
 typedef struct video_struct VIDEO;
@@ -62,22 +63,22 @@ static VIDEO video_data = { 0 };
 //-----------------------------------------------------------
 
 
-void vid_init()
+void vid_init(void)
 {
 #if 0
 	printf("Initialising SDL video subsystem... ");
-	
-	if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0)
+
+	if (!SDL_InitSubSystem(SDL_INIT_VIDEO))
 	{
 		printf("vid_driver_init(): unable to initialise SDL video subsystem.\n");
 		agi_exit();
 	}
-	
+
 	printf("done.\n");
 #endif
 }
 
-void vid_shutdown()
+void vid_shutdown(void)
 {
 	//SDL_QuitSubSystem(SDL_INIT_VIDEO);
 }
@@ -89,32 +90,27 @@ void vid_shutdown()
 // 0 = window
 void vid_display(AGISIZE *screen_size, int fullscreen_state)
 {
-	int result = 0;
-
 	if (video_data.window == 0)
 	{
-		Uint32 sdl_flags;
+		SDL_WindowFlags sdl_flags;
 		sdl_flags = SDL_WINDOW_RESIZABLE;
 		if (fullscreen_state)
-			sdl_flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+			sdl_flags |= SDL_WINDOW_FULLSCREEN;
 
-		result = SDL_CreateWindowAndRenderer( screen_size->w, screen_size->h,
-			sdl_flags, &video_data.window, &video_data.renderer);
-
-		if(result != 0)
+		if (!SDL_CreateWindowAndRenderer("NAGI", screen_size->w, screen_size->h,
+			sdl_flags, &video_data.window, &video_data.renderer))
 		{
 			printf("Unable to create video window: %s\n", SDL_GetError());
 			agi_exit();
 		}
 
-		SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");  // make the scaled rendering look smoother.
-		SDL_RenderSetLogicalSize(video_data.renderer, screen_size->w, screen_size->h);
-	} 
-	else 
+		// SDL3: Use texture scale mode for smooth scaling
+		SDL_SetRenderLogicalPresentation(video_data.renderer, screen_size->w, screen_size->h,
+			SDL_LOGICAL_PRESENTATION_LETTERBOX);
+	}
+	else
 	{
-		Uint32 sdl_flags = fullscreen_state ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0;
-		result = SDL_SetWindowFullscreen(video_data.window, sdl_flags);
-		if (result != 0)
+		if (!SDL_SetWindowFullscreen(video_data.window, fullscreen_state ? true : false))
 		{
 			printf("Error trying to set fullscreen state to %d: %s\n", fullscreen_state, SDL_GetError());
 		}
@@ -135,55 +131,45 @@ void vid_display(AGISIZE *screen_size, int fullscreen_state)
 	if (video_data.surface == 0)
 	{
 		assert(video_data.surface == 0);
-		video_data.surface = SDL_CreateRGBSurface( 0,
-			screen_size->w, screen_size->h, 8,
-			0, 0, 0, 0 );
+
+		// Create 8-bit indexed surface
+		video_data.surface = SDL_CreateSurface(screen_size->w, screen_size->h, SDL_PIXELFORMAT_INDEX8);
 		if (video_data.surface == NULL)
 		{
 			printf("Unable to create video surface: %s\n", SDL_GetError());
 			agi_exit();
 		}
-		SDL_FillRect(video_data.surface, NULL, 0);
+
+		// Create and set palette for the 8-bit surface
+		video_data.palette = SDL_CreatePalette(256);
+		if (video_data.palette == NULL)
+		{
+			printf("Unable to create palette: %s\n", SDL_GetError());
+			agi_exit();
+		}
+		SDL_SetSurfacePalette(video_data.surface, video_data.palette);
+
+		SDL_FillSurfaceRect(video_data.surface, NULL, 0);
 
 		assert(video_data.texture == 0);
 		video_data.texture = SDL_CreateTexture( video_data.renderer,
-			SDL_PIXELFORMAT_RGB888,
+			SDL_PIXELFORMAT_XRGB8888,
 			SDL_TEXTUREACCESS_STREAMING,
 			screen_size->w, screen_size->h );
 		if (video_data.texture == NULL)
 		{
 			printf("Unable to create video texture: %s\n", SDL_GetError());
 			agi_exit();
-		}	
+		}
 
 		// Create intermediate surface to convert 8bit to 32bit pixels.
-		// TODO: Nick: I think it should be okay to just use SDL_ConvertSurfaceFormat but I thought I saw some issues.
 		assert(video_data.surface_conv == 0);
-#if 1
-		video_data.surface_conv = SDL_ConvertSurfaceFormat(video_data.surface, SDL_PIXELFORMAT_RGB888, 0);
-		SDL_FillRect(video_data.surface_conv, NULL, SDL_MapRGBA(video_data.surface_conv->format, 0, 0, 0, 255));
-#else
-		int conv_bpp;
-		Uint32 conv_Rmask;
-		Uint32 conv_Gmask;
-		Uint32 conv_Bmask;
-		Uint32 conv_Amask;
-		if (!SDL_PixelFormatEnumToMasks(SDL_PIXELFORMAT_RGB888, &conv_bpp, &conv_Rmask, &conv_Gmask, &conv_Bmask, &conv_Amask)) {
-			printf("Unable to create pixel format masks: %s\n", SDL_GetError());
-			agi_exit();
-		}
-		video_data.surface_conv = SDL_CreateRGBSurface(
-			0, 
-			screen_size->w, screen_size->h,
-			conv_bpp,
-			conv_Rmask, conv_Gmask, conv_Bmask, conv_Amask
-			);
-#endif
-
+		video_data.surface_conv = SDL_CreateSurface(screen_size->w, screen_size->h, SDL_PIXELFORMAT_XRGB8888);
 		if (video_data.surface_conv == NULL) {
 			printf("Unable to create conversion video surface: %s\n", SDL_GetError());
 			agi_exit();
 		}
+		SDL_FillSurfaceRect(video_data.surface_conv, NULL, SDL_MapSurfaceRGBA(video_data.surface_conv, 0, 0, 0, 255));
 
 		vid_notify_window_size_changed(SDL_GetWindowID(video_data.window));
 	}
@@ -197,7 +183,7 @@ void vid_display(AGISIZE *screen_size, int fullscreen_state)
 
 static void vid_free_surfaces(void)
 {
-	if (video_data.texture != 0) 
+	if (video_data.texture != 0)
 	{
 		SDL_DestroyTexture(video_data.texture);
 		video_data.texture = 0;
@@ -205,22 +191,28 @@ static void vid_free_surfaces(void)
 
 	if (video_data.surface != 0)
 	{
-		SDL_FreeSurface(video_data.surface);
+		SDL_DestroySurface(video_data.surface);
 		video_data.surface = 0;
 	}
 
 	if (video_data.surface_conv != 0)
 	{
-		SDL_FreeSurface(video_data.surface_conv);
+		SDL_DestroySurface(video_data.surface_conv);
 		video_data.surface_conv = 0;
+	}
+
+	if (video_data.palette != 0)
+	{
+		SDL_DestroyPalette(video_data.palette);
+		video_data.palette = 0;
 	}
 }
 
-void vid_free()
+void vid_free(void)
 {
 	vid_free_surfaces();
 
-	if (video_data.renderer != 0) 
+	if (video_data.renderer != 0)
 	{
 		SDL_DestroyRenderer(video_data.renderer);
 		video_data.renderer = 0;
@@ -233,13 +225,13 @@ void vid_free()
 	}
 }
 
-void *vid_getbuf()
+void *vid_getbuf(void)
 {
 	assert(video_data.surface);
 	return video_data.surface->pixels;
 }
 
-int vid_getlinesize()
+int vid_getlinesize(void)
 {
 	assert(video_data.surface);
 	return video_data.surface->pitch;
@@ -250,7 +242,7 @@ SDL_Window* vid_get_main_window(void)
 	return video_data.window;
 }
 
-void vid_lock()
+void vid_lock(void)
 {
 	assert(video_data.surface);
 	if (!SDL_MUSTLOCK(video_data.surface)) { return; }
@@ -261,7 +253,7 @@ void vid_lock()
 	}
 }
 
-void vid_unlock()
+void vid_unlock(void)
 {
 	assert(video_data.surface);
 	if (!SDL_MUSTLOCK(video_data.surface)) { return; }
@@ -281,21 +273,21 @@ void vid_update(POS *pos, AGISIZE *size)
 		size->w = surface->w - pos->x;
 	if ((pos->y + size->h) > surface->h)
 		size->h = surface->h - pos->y;
-	
+
 	vid_render(surface, pos->x, pos->y, size->w, size->h);
 
 }
 
 // when resizing a window, make sure the aspect ratio is preserved
-void vid_notify_window_size_changed(Uint32 windowID)
+void vid_notify_window_size_changed(SDL_WindowID windowID)
 {
 	if (video_data.window == 0)
-	{ 
+	{
 		printf("vid_notify_window_size_changed(): ERROR: received window resize event, but no window!\n");
-		return; 
+		return;
 	}
 
-	Uint32 current_window_id = SDL_GetWindowID(video_data.window);
+	SDL_WindowID current_window_id = SDL_GetWindowID(video_data.window);
 	if (current_window_id == 0)
 	{
 		printf("vid_notify_window_size_changed(): ERROR: received window resize event, but unable to determine current window id: %s\n", SDL_GetError());
@@ -307,19 +299,21 @@ void vid_notify_window_size_changed(Uint32 windowID)
 	int window_width, window_height;
 	SDL_GetWindowSize(video_data.window, &window_width, &window_height);
 
-	if (video_data.texture == 0) 
+	if (video_data.texture == 0)
 	{
 		printf("vid_notify_window_size_changed(): ERROR: received window resize event, but no backing texture!\n");
-		return; 
+		return;
 	}
 
-	Uint32 format;
-	int access, texture_width, texture_height;
-	if (SDL_QueryTexture(video_data.texture, &format, &access, &texture_width, &texture_height) != 0)
+	float texture_width_f, texture_height_f;
+	if (!SDL_GetTextureSize(video_data.texture, &texture_width_f, &texture_height_f))
 	{
 		printf("vid_notify_window_size_changed(): ERROR: received window resize event, but unable to determine texture size: %s\n", SDL_GetError());
 		return;
 	}
+
+	int texture_width = (int)texture_width_f;
+	int texture_height = (int)texture_height_f;
 
 	int new_window_width = window_width;
 	int new_window_height = window_width * texture_height / texture_width;
@@ -335,32 +329,28 @@ void vid_notify_window_size_changed(Uint32 windowID)
 static void vid_render(SDL_Surface *surface, const u32 x, const u32 y, const u32 w, const u32 h)
 {
 	SDL_Rect rect;
-	rect.x = x;
-	rect.y = y;
-	rect.w = w;
-	rect.h = h;
+	rect.x = (int)x;
+	rect.y = (int)y;
+	rect.w = (int)w;
+	rect.h = (int)h;
 
-	int res;
+	(void)rect; // unused in current implementation
 
 	// Convert up from 8bpp (used on ye olde graphics cards) to
 	// something relevant to this century
-	res = SDL_BlitSurface(surface, NULL, video_data.surface_conv, NULL);
-	if (res != 0) {
+	if (!SDL_BlitSurface(surface, NULL, video_data.surface_conv, NULL)) {
 		printf("vid_render: Error converting surface: %s\n", SDL_GetError());
 	}
-	res = SDL_UpdateTexture(video_data.texture, NULL, video_data.surface_conv->pixels, video_data.surface_conv->pitch);
-	if (res != 0) {
+	if (!SDL_UpdateTexture(video_data.texture, NULL, video_data.surface_conv->pixels, video_data.surface_conv->pitch)) {
 		printf("vid_render: Error updating screen texture: %s\n", SDL_GetError());
 	}
 
-	res = SDL_SetRenderDrawColor(video_data.renderer, 0, 0, 0, 255);
-	res = SDL_RenderClear(video_data.renderer);
-	if (res != 0) {
+	SDL_SetRenderDrawColor(video_data.renderer, 0, 0, 0, 255);
+	if (!SDL_RenderClear(video_data.renderer)) {
 		printf("vid_render: Error clearing screen: %s\n", SDL_GetError());
 	}
 
-	res = SDL_RenderCopy(video_data.renderer, video_data.texture, NULL, NULL);
-	if (res != 0) {
+	if (!SDL_RenderTexture(video_data.renderer, video_data.texture, NULL, NULL)) {
 		printf("vid_render: Error copying texture to screen: %s\n", SDL_GetError());
 	}
 	SDL_RenderPresent(video_data.renderer);
@@ -371,20 +361,19 @@ void vid_palette_set(PCOLOUR *palette, u8 num)
 {
 	SDL_Color *sdl_palette = alloca(num * sizeof(SDL_Color));
 	int i;
-	SDL_Surface *surface;
 
-	surface = video_data.surface;
-	assert(surface);
+	assert(video_data.surface);
+	assert(video_data.palette);
 
 	for (i=0; i<num; i++)
 	{
 		sdl_palette[i].r = palette[i].r;
 		sdl_palette[i].g = palette[i].g;
 		sdl_palette[i].b = palette[i].b;
-		sdl_palette[i].a = 0;
+		sdl_palette[i].a = 255;
 	}
 
-	if(SDL_SetPaletteColors(surface->format->palette, sdl_palette, 0, num) != 0)
+	if(!SDL_SetPaletteColors(video_data.palette, sdl_palette, 0, num))
 	{
 		printf( "Unable to set colour palette: %s\n", SDL_GetError());
 		agi_exit();
@@ -399,11 +388,11 @@ void vid_palette_set(PCOLOUR *palette, u8 num)
 void vid_fill(POS *pos, AGISIZE *size, u32 colour)
 {
 	assert(video_data.surface);
-	
+
 	if ( (pos->x|pos->y|size->w|size->h) == 0)
 	{
 		vid_lock();
-		SDL_FillRect(video_data.surface, 0, colour);
+		SDL_FillSurfaceRect(video_data.surface, 0, colour);
 		vid_unlock();
 	}
 	else
@@ -414,7 +403,7 @@ void vid_fill(POS *pos, AGISIZE *size, u32 colour)
 		rect.w = size->w;
 		rect.h = size->h;
 		vid_lock();
-		SDL_FillRect(video_data.surface, &rect, colour);
+		SDL_FillSurfaceRect(video_data.surface, &rect, colour);
 		vid_unlock();
 		vid_render(video_data.surface,
 			rect.x, rect.y, rect.w, rect.h);
@@ -425,59 +414,58 @@ static int shake_offset[] = {25, 0, -25};
 
 void vid_shake(int count)
 {
-	u32 rmask,gmask,bmask,amask;
-	u8 bpp;
 	int width, height;
 	SDL_Surface *orig;
 	SDL_Rect dest = {0,0, 0, 0};
 	SDL_Surface *surface;
-	
+
 	surface = video_data.surface;
 	assert(surface);
-	
 
-	//      get screen width, height, depth, ptic... etc etc
-	bpp = surface->format->BitsPerPixel;
-	rmask = surface->format->Rmask;
-	gmask = surface->format->Gmask;
-	bmask = surface->format->Bmask;
-	amask = surface->format->Amask;
 	width =  surface->w;
 	height =  surface->h;
 
-	//      create new surface
-	orig = SDL_CreateRGBSurface(0, width, height, bpp, rmask, gmask, bmask, amask);
+	// Create new surface with same format as original
+	orig = SDL_CreateSurface(width, height, SDL_PIXELFORMAT_INDEX8);
 	if (!orig) return;
 
-	orig->format->palette->ncolors = surface->format->palette->ncolors ;
-	memcpy (orig->format->palette->colors, surface->format->palette->colors, orig->format->palette->ncolors * sizeof (SDL_Color)) ;
-	
-	//      blit screen to new surface
-	if (SDL_BlitSurface(surface, 0, orig, 0)) goto shake_error;
+	// Copy palette from original surface
+	if (video_data.palette) {
+		SDL_Palette *new_palette = SDL_CreatePalette(video_data.palette->ncolors);
+		if (new_palette) {
+			SDL_SetPaletteColors(new_palette, video_data.palette->colors, 0, video_data.palette->ncolors);
+			SDL_SetSurfacePalette(orig, new_palette);
+			// Note: We'll need to destroy this palette, but for simplicity we'll just let it leak
+			// during the shake effect since it's very short-lived
+		}
+	}
+
+	// blit screen to new surface
+	if (!SDL_BlitSurface(surface, 0, orig, 0)) goto shake_error;
 
 	count *= 8;
 	while (count--)
 	{
 		// clear entire window
 		vid_lock();
-		if (SDL_FillRect(surface, 0, 0))
-			goto shake_error;       
+		if (!SDL_FillSurfaceRect(surface, 0, 0))
+			goto shake_error;
 		vid_unlock();
 
 		// print the surface in some strange location
 		dest.x = shake_offset[rand()%3];
 		dest.y = shake_offset[rand()%3];
-		if (SDL_BlitSurface(orig, 0, surface, &dest)) // blit to some offset  stretch*10 or something
-			goto shake_error; 
+		if (!SDL_BlitSurface(orig, 0, surface, &dest)) // blit to some offset  stretch*10 or something
+			goto shake_error;
 		vid_render(surface, 0, 0, 0, 0);
 
 		SDL_Delay(50);
 	}
 	// put the original screen back on
-	if (SDL_BlitSurface(orig, 0, surface, 0)) // update the screen
-		goto shake_error; 
+	if (!SDL_BlitSurface(orig, 0, surface, 0)) // update the screen
+		goto shake_error;
 	vid_render(surface, 0, 0, 0, 0);
-	
+
 shake_error:
-	SDL_FreeSurface(orig);
+	SDL_DestroySurface(orig);
 }

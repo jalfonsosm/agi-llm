@@ -231,9 +231,8 @@ target_sources(nagi
     ${lib_sources} 
 )
 
-target_link_libraries(nagi PRIVATE 
-    SDL2::SDL2
-    SDL2::SDL2main
+target_link_libraries(nagi PRIVATE
+    SDL3::SDL3
 )
 
 set_target_properties(nagi PROPERTIES

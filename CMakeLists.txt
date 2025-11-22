@@ -3,7 +3,7 @@ if(${CMAKE_VERSION} VERSION_LESS 3.12)
     cmake_policy(VERSION ${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION})
 endif()
 
-set(CMAKE_OSX_DEPLOYMENT_TARGET "10.9" CACHE STRING "Minimum OS X deployment version")
+set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum OS X deployment version")
 
 project(NAGI
     VERSION "2.0.7"
@@ -39,9 +39,10 @@ if(MSVC)
     add_compile_definitions(_CRT_SECURE_NO_DEPRECATE)
     add_compile_definitions(_CRT_NONSTDC_NO_DEPRECATE)
 else()
+    add_compile_definitions(_DEFAULT_SOURCE)
     add_compile_options(
-        -fsigned-char 
-        -fno-strict-aliasing 
+        -fsigned-char
+        -fno-strict-aliasing
         -fwrapv
 
         -Wall
@@ -49,7 +50,6 @@ else()
 
         -Wcast-align
         -Wcast-qual
-        -Wconditional-uninitialized
         -Wendif-labels
         -Wfloat-equal
         -Wformat
@@ -58,34 +58,35 @@ else()
         -Winline
         -Wmissing-noreturn
         -Wmissing-declarations
-        -Wmissing-variable-declarations
         -Wpointer-arith
         -Wshadow
         -Wundef
         -Wunreachable-code
-        -Wunreachable-code-break
-        -Wunreachable-code-return
         -Wunused-result
         -Wwrite-strings
-
-        # -Weverything
-        # -Wno-padded
-        # -Wno-conversion
-        # -Wno-format-pedantic
 
         -Werror=write-strings
         -Werror=implicit-function-declaration
         -Werror=unused-result
     )
 
+    # Clang-specific warnings
+    if ("${CMAKE_C_COMPILER_ID}" MATCHES "Clang")
+        add_compile_options(
+            -Wconditional-uninitialized
+            -Wmissing-variable-declarations
+            -Wunreachable-code-break
+            -Wunreachable-code-return
+        )
+    endif()
+
     add_compile_options($<$<COMPILE_LANGUAGE:C>:-Wbad-function-cast>)
-    add_compile_options($<$<COMPILE_LANGUAGE:C>:-Wdeclaration-after-statement>)
     add_compile_options($<$<COMPILE_LANGUAGE:C>:-Wno-missing-prototypes>)
     add_compile_options($<$<COMPILE_LANGUAGE:C>:-Wold-style-definition>)
     add_compile_options($<$<COMPILE_LANGUAGE:C>:-Wstrict-prototypes>)
 
 endif()
 
-include(AddSDL2)
+include(AddSDL3)
 
 add_subdirectory(src)

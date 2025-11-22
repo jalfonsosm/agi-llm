@@ -45,7 +45,7 @@ struct sdl_channel_struct
 	int handle;
 	int (*callback)(void *userdata, u8 *stream, int len);
 	void *userdata;
-	
+
 	int avail;
 };
 typedef struct sdl_channel_struct SDL_CHAN;
@@ -59,7 +59,7 @@ static void pcm_out_sdl_state_set(int );
 static int pcm_out_sdl_state_get(void);
 static void pcm_out_sdl_lock(void);
 static void pcm_out_sdl_unlock(void);
-static void sdl_callback(void *userdata, u8 *stream, int len);
+static void SDLCALL sdl_audio_callback(void *userdata, SDL_AudioStream *stream, int additional_amount, int total_amount);
 
 /* VARIABLES	---	---	---	---	---	---	--- */
 
@@ -67,6 +67,10 @@ static u8 handles_used = 0;
 
 static LIST *chan_list = 0;
 
+static SDL_AudioStream *audio_stream = NULL;
+static SDL_AudioDeviceID audio_device = 0;
+static int audio_playing = 0;
+static SDL_Mutex *audio_mutex = NULL;
 
 #if WRITE_TO_DISK
 struct data_struct
@@ -75,7 +79,7 @@ struct data_struct
 	int len;
 };
 typedef struct data_struct DATA;
-	
+
 static LIST *list_data = 0;
 static int file_handle = 0;
 #endif
@@ -88,10 +92,10 @@ static int file_handle = 0;
 void pcm_out_sdl_drv_init(void *void_ptr)
 {
 	PCM_OUT_DRIVER *drv;
-	
+
 	drv = (PCM_OUT_DRIVER *) void_ptr;
 	assert(drv);
-	
+
 	drv->ptr_init = pcm_out_sdl_init;
 	drv->ptr_shutdown = pcm_out_sdl_shutdown;
 	drv->ptr_avail = pcm_out_sdl_avail;
@@ -107,46 +111,51 @@ void pcm_out_sdl_drv_init(void *void_ptr)
 
 static int pcm_out_sdl_init(int freq, int format)
 {
-	SDL_AudioSpec wanted;
-	
 	(void) freq;
 	(void) format;
 
 	printf("pcm_out_sdl_init(): Initialising SDL audio subsystem... ");
-	#if 0
-	if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0)
+
+	// Create mutex for thread safety
+	audio_mutex = SDL_CreateMutex();
+	if (audio_mutex == NULL)
 	{
-		printf("\npcm_out_sdl_init(): unable to initialise SDL audio subsystem.\n");
+		printf("\npcm_out_sdl_init(): unable to create audio mutex.\n");
 		printf("%s\n", SDL_GetError());
 		return -1;
 	}
-	#endif
 
-	
-	// sets the freq/type
-	wanted.freq = 44100;
-	wanted.format = AUDIO_S16LSB;
-	wanted.samples = 256;
-	wanted.channels = 1;
-	wanted.callback = sdl_callback;
-	wanted.userdata = 0;
-	
-	// opens up calback
-	if (SDL_OpenAudio(&wanted, 0) != 0)
+	// SDL3 audio spec - 44100 Hz, 16-bit signed, mono
+	SDL_AudioSpec spec;
+	spec.freq = 44100;
+	spec.format = SDL_AUDIO_S16LE;
+	spec.channels = 1;
+
+	// Open audio device and create stream with callback
+	audio_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,
+		&spec, sdl_audio_callback, NULL);
+
+	if (audio_stream == NULL)
 	{
-		printf("\npcm_out_sdl_init(): unable to open audio.\n");
+		printf("\npcm_out_sdl_init(): unable to open audio device.\n");
+		printf("%s\n", SDL_GetError());
+		SDL_DestroyMutex(audio_mutex);
+		audio_mutex = NULL;
 		return -1;
 	}
-	
-	// pauses callback
+
+	// Get the device ID associated with this stream
+	audio_device = SDL_GetAudioStreamDevice(audio_stream);
+
+	// Start paused
 	pcm_out_sdl_state_set(0);
-	
+
 #if WRITE_TO_DISK
 	list_data = list_new(sizeof(DATA));
 #endif
-	
+
 	printf("done.\n");
-	
+
 	return 0;
 }
 
@@ -154,26 +163,35 @@ static void pcm_out_sdl_shutdown(void)
 {
 
 	// set state to stop
-	pcm_out_sdl_state_set(0);	
-	
+	pcm_out_sdl_state_set(0);
+
 	// close all remaining channels
 	if (chan_list)
 	{
 		list_free(chan_list);
 		chan_list=0;
 	}
-	
-	// shutdown audio subsystem
-	//SDL_CloseAudio();
-	
-	//SDL_QuitSubSystem(SDL_INIT_AUDIO);
-	
+
+	// shutdown audio
+	if (audio_stream)
+	{
+		SDL_DestroyAudioStream(audio_stream);
+		audio_stream = NULL;
+		audio_device = 0;
+	}
+
+	if (audio_mutex)
+	{
+		SDL_DestroyMutex(audio_mutex);
+		audio_mutex = NULL;
+	}
+
 #if WRITE_TO_DISK
 	if (list_data)
 	{
 		DATA *cur;
 		int amount;
-		
+
 		cur = list_element_head(list_data);
 #ifdef _WIN32
 		file_handle = open("sound.raw", O_BINARY|O_RDWR|O_CREAT, S_IREAD|S_IWRITE);
@@ -210,29 +228,29 @@ static int handle_new(void)
 {
 	int handle = 1;
 	u8 mask = 0x80;
-	
+
 	while ( (mask) && (handles_used&mask) )
 	{
 		mask >>= 1;
 		handle++;
 	}
-	
+
 	// if mask == 0 then handles_uses is untouched.
 	handles_used |= mask;
-	
+
 	return (mask) ? handle : 0;
 }
 
 static void handle_free(int handle)
 {
 	u8 mask = 0x80;
-	
+
 	assert(handle > 0);
 	assert(handle <= 8);
-	
+
 	mask >>= handle - 1;
 	mask ^= 0xFF;
-	
+
 	handles_used &= mask;
 }
 
@@ -244,7 +262,7 @@ static int pcm_out_sdl_open( int (*callback)(void *userdata, Uint8 *stream, int 
 	SDL_CHAN *chan_new;
 
 	pcm_out_sdl_lock();
-	
+
 	if (chan_list == 0)
 		chan_list = list_new(sizeof(SDL_CHAN));
 
@@ -255,10 +273,10 @@ static int pcm_out_sdl_open( int (*callback)(void *userdata, Uint8 *stream, int 
 	chan.callback = callback;
 	chan.userdata = userdata;
 	chan.avail = 1;
-	
+
 	chan_new = list_add(chan_list);
 	memcpy(chan_new, &chan, sizeof(SDL_CHAN) );
-	
+
 	pcm_out_sdl_unlock();
 	return chan.handle;
 }
@@ -267,14 +285,14 @@ static void pcm_out_sdl_close(int handle)
 {
 	SDL_CHAN *ch;
 	(void) handle;
-	
+
 	if (chan_list)
 	{
 		// find the one with a handle
 		ch = list_element_head(chan_list);
 		while ((ch) && (ch->handle != handle))
 			ch=node_next(ch);
-		
+
 		// kill it
 		if (ch)
 		{
@@ -288,67 +306,91 @@ static void pcm_out_sdl_close(int handle)
 // 0 = stopped
 static void pcm_out_sdl_state_set(int snd_state)
 {
-	SDL_PauseAudio(snd_state?0:1);
+	if (audio_stream)
+	{
+		if (snd_state)
+		{
+			SDL_ResumeAudioStreamDevice(audio_stream);
+			audio_playing = 1;
+		}
+		else
+		{
+			SDL_PauseAudioStreamDevice(audio_stream);
+			audio_playing = 0;
+		}
+	}
 }
 
 static int pcm_out_sdl_state_get(void)
 {
-	return (SDL_GetAudioStatus() == SDL_AUDIO_PLAYING);
+	return audio_playing;
 }
 
 // lock audio thread so data can be changed
 static void pcm_out_sdl_lock(void)
 {
-	SDL_LockAudio();
+	if (audio_mutex)
+	{
+		SDL_LockMutex(audio_mutex);
+	}
 }
 
 // unlock thread
 static void pcm_out_sdl_unlock(void)
 {
-	SDL_UnlockAudio();
+	if (audio_mutex)
+	{
+		SDL_UnlockMutex(audio_mutex);
+	}
 }
 
 
 
-static void sdl_callback(void *userdata, u8 *stream, int len)
+static void SDLCALL sdl_audio_callback(void *userdata, SDL_AudioStream *stream, int additional_amount, int total_amount)
 {
-	s16* chan_data = alloca(len);
+	(void)userdata;
+	(void)total_amount;
+
+	if (additional_amount <= 0) return;
+
+	// Allocate temporary buffers
+	u8* output_buffer = alloca(additional_amount);
+	s16* chan_data = alloca(additional_amount);
+
 	int stream_len, stream_count;
 	s16 *s_ptr, *c_ptr;
-	
+
 	SDL_CHAN *ch;
 	int num_chan;
 	int output = 0;
-	
+
 #if WRITE_TO_DISK
 	DATA *new_data;
 #endif
 
-	(void) userdata;
-	
-	assert(stream);
+	SDL_memset(output_buffer, 0, additional_amount);
 
-	SDL_memset(stream,0,len);
-	
+	SDL_LockMutex(audio_mutex);
+
 	if (chan_list != NULL)
 	{
 		num_chan = list_length(chan_list);
 		ch = list_element_head(chan_list);
-		
-		stream_len = len / (int)sizeof(s16);
+
+		stream_len = additional_amount / (int)sizeof(s16);
 		while (ch != NULL)
 		{
 			// get channel data(chan.userdata)
 			if (ch->avail)
 			{
-				if (ch->callback( ch->userdata, (u8 *)chan_data, len) == 0)
+				if (ch->callback( ch->userdata, (u8 *)chan_data, additional_amount) == 0)
 				{
 					// divide by number of channels then add to stream
 					stream_count = stream_len;
-					s_ptr = (s16*)stream;
+					s_ptr = (s16*)output_buffer;
 					c_ptr = (s16*)chan_data;
 					output = 1;
-					
+
 					while(stream_count--)
 						*(s_ptr++) += *(c_ptr++) / num_chan ;
 				}
@@ -357,23 +399,28 @@ static void sdl_callback(void *userdata, u8 *stream, int len)
 					ch->avail = 0;
 				}
 			}
-			
+
 			ch = node_next(ch);
 		}
 	}
-	
+
+	SDL_UnlockMutex(audio_mutex);
+
 #if WRITE_TO_DISK
 	new_data = list_add(list_data);
-	new_data->data = (u8 *)a_malloc(len);
-	memcpy(new_data->data, stream, len);
-	new_data->len = len;
+	new_data->data = (u8 *)a_malloc(additional_amount);
+	memcpy(new_data->data, output_buffer, additional_amount);
+	new_data->len = additional_amount;
 #endif
-	
+
+	// Put audio data into the stream
+	SDL_PutAudioStreamData(stream, output_buffer, additional_amount);
+
 	if (!output)
 	{
 		sndgen_kill_thread();
-		// call shutdown routin
+		// call shutdown routine
 	}
-	
+
 }
 

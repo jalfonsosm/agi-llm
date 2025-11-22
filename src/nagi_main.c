@@ -26,7 +26,7 @@ _Finish                          cseg     000002AE 00000015
 #include <stdio.h>
 #include <setjmp.h>
 
-#include "SDL.h"
+#include <SDL3/SDL.h>
 
 /* OTHER headers	---	---	---	---	---	---	--- */
 #include "initialise.h"

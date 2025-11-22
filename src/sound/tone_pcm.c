@@ -137,7 +137,7 @@ void tone_pcm_drv_init(void *drv)
 int tone_pcm_init(void)
 {
 	// init a pcm device
-	if (pcm_out_init(44100, AUDIO_S16LSB))
+	if (pcm_out_init(44100, SDL_AUDIO_S16LE))
 		return -1;
 	
 	vol_table_init();

@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-#include "SDL.h"
+#include <SDL3/SDL.h>
 
 //#define alloca __builtin_alloca
 
