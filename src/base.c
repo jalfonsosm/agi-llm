@@ -52,14 +52,22 @@ AGI_NO_RETURN void agi_exit()
 {
 	agi_shutdown();
 	nagi_shutdown();
-	
-	
+
+
 	//restore_vectors();
 
 	// includes sound, time, events
 	//vid_mode_set(original_video_mode);
-	
+
 	dir_preset_change(DIR_PRESET_ORIG);
-	
+
+	exit(0);
+}
+
+// Early exit before agi_init() has been called
+AGI_NO_RETURN void nagi_early_exit()
+{
+	nagi_shutdown();
+	dir_preset_change(DIR_PRESET_ORIG);
 	exit(0);
 }

@@ -827,7 +827,9 @@ void standard_select_ng(void)
 	if (list_length(list_game) == 0)
 	{
 		printf("no games detected\n");
-		agi_exit();
+		printf("Usage: nagi [game_directory]\n");
+		printf("Run nagi from a directory containing AGI game files, or pass the path as argument.\n");
+		nagi_early_exit();
 	}
 	
 	// SORT THE LIST
@@ -838,7 +840,7 @@ void standard_select_ng(void)
 	if (game_selected == 0)
 	{
 		printf("user exits.\n");
-		agi_exit();
+		nagi_early_exit();
 	}
 
 	// init game

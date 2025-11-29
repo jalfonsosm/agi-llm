@@ -14,7 +14,6 @@ extern void message_box_draw(const char *str, u16 row, u16 w, u16 toggle);
 extern char *str_wordwrap(char *msg, const char *str, u16 w);
 extern const char *logic_msg(u16 msg_num);
 
-
 struct msgstate_struct
 {
 	// writable settings --------------

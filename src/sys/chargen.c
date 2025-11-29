@@ -168,7 +168,8 @@ static void font_load(FILE *font_stream)
 	ch = fgetc(font_stream);
 	while (ch != 0xFF)
 	{
-		fread(&font_data[font_chsize*ch], font_chsize, 1, font_stream);
+		size_t bytes_read = fread(&font_data[font_chsize*ch], font_chsize, 1, font_stream);
+		(void)bytes_read;
 		ch = fgetc(font_stream);
 	}
 }

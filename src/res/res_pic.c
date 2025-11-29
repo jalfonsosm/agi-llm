@@ -100,7 +100,10 @@ static void pd_buff_fill(u16 byte_cur)
 		pd_stream_size = 0;
 	}
 	if ( size != 0)
-		fread(pd_buff+byte_cur, sizeof(u8), size, pd_stream);
+	{
+		size_t bytes_read = fread(pd_buff+byte_cur, sizeof(u8), size, pd_stream);
+		(void)bytes_read;
+	}
 }
 
 static u8 *pd_buff_shift(u8 *buff_cur)

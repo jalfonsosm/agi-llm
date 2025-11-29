@@ -24,6 +24,7 @@ R_Logic13A5                      cseg     000013A5 0000002F
 #include "../logic/logic_base.h"
 #include "../logic/logic_execute.h"
 
+
 // script
 #include "../sys/script.h"
 // erase/blit both
@@ -215,12 +216,13 @@ u8 *logic_call(u16 logic_num)
 	LOGIC *last_orig = 0;		// original last node
 	LOGIC *cur_orig;		// oringal current node
 	u16 untouched;
-	
+
+	/* Save current logic and set up new one*/
 	cur_orig = logic_cur;
 	untouched = 1;
-	
+
 	logic_cur = logic_list_find(logic_num);
-	
+
 	//~ if logic_cur == 0, then we're running logic.0 (since logic_cur is initialised to
 	//~ a null pointer)
 	// ie.. we don't need to remember the previous logic
@@ -236,7 +238,7 @@ u8 *logic_call(u16 logic_num)
 		trace_state = 1;
 	if (logic_num == 0)
 		logic_called = 1;
-	
+
 	code = logic_execute(logic_cur);
 
 	// TODO: warning another AGI bug.  if restore/restart/newroom is called from a called logic, havoc may be wrecked when returning.
@@ -245,7 +247,7 @@ u8 *logic_call(u16 logic_num)
 	{
 		assert(logic_new != NULL);
 		assert(last_orig != NULL);
-		
+
 		last_orig->next = 0;
 		blists_erase();
 		//set_mem_ptr(logic_new);
@@ -254,7 +256,7 @@ u8 *logic_call(u16 logic_num)
 		free(logic_new);
 		blists_draw();
 	}
-	
+
 	logic_cur = cur_orig;
 	return code;
 }

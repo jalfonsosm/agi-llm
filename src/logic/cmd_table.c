@@ -76,6 +76,9 @@
 // logs!!!?!?!!!
 #include "../log.h"
 
+// update.context
+#include "../logic/llm.h"
+
 u8 cmd_ret_false()
 {
 	return 0;
@@ -349,6 +352,9 @@ FUNC cmd_table[CMD_MAX + 1] = {
 			// 180
 			{"cmd.mouse.posn (incomplete)", cmd_do_nothing, 2, 0xC0},
 			{"cmd.release.key", cmd_unknown_181, 0, 0},
-			{"cmd.adj.ego.move.to.x.y (incomplete)", cmd_do_nothing, 0, 0}
+			{"cmd.adj.ego.move.to.x.y (incomplete)", cmd_do_nothing, 0, 0},
+
+			// custom commands
+			{ "update.context", cmd_update_context, 1, 0 },
 		};
 

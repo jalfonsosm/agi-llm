@@ -5,5 +5,6 @@ u8 *cmd_pause(u8 *logic_ptr);
 u8 *cmd_quit(u8 *logic_ptr);
 
 extern AGI_NO_RETURN void agi_exit(void);
+extern AGI_NO_RETURN void nagi_early_exit(void);
 
 #endif /* NAGI_BASE_H */

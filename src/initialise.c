@@ -70,6 +70,7 @@ _RoomInit                        cseg     000012DE 00000015
 
 #include "log.h"
 
+
 /* PROTOTYPES	---	---	---	---	---	---	--- */
 // reads ini file and inits nagi
 void nagi_init(void);
@@ -224,9 +225,13 @@ void agi_init()
 
 void game_init(void)
 {
+	fprintf(stderr, "[GAME_INIT] Called - resetting all variables (var[0] was %d)\n", state.var[0]);
+	fflush(stderr);
 	if (object_file_load())
 		agi_exit();
 	memset(state.var, 0, sizeof(state.var));	// clear variables
+	fprintf(stderr, "[GAME_INIT] Variables cleared, var[0] = %d\n", state.var[0]);
+	fflush(stderr);
 	flags_clear();
 	control_state_clear();
 	room_init();				// reset file data stuff to 0
@@ -301,23 +306,24 @@ void agi_shutdown(void)
 
 void nagi_shutdown(void)
 {
+	printf("nagi_shutdown: lzw_shutdown...\n"); fflush(stdout);
 	lzw_shutdown();
 
 	//sound_shutdown
+	printf("nagi_shutdown: sndgen_shutdown...\n"); fflush(stdout);
 	sndgen_shutdown();
 	// clock_shutdown
+	printf("nagi_shutdown: clock_denit...\n"); fflush(stdout);
 	clock_denit();
 
 	// events_shutdown
 	// TODO during events rewrite
-	
+
 	// gfx_shutdown
+	printf("nagi_shutdown: gfx_shutdown...\n"); fflush(stdout);
 	gfx_shutdown();
 	
-	// sdl_shutdown
+	printf("nagi_shutdown: SDL_Quit...\n"); fflush(stdout);
 	SDL_Quit();
-	
-	// console close
-	// config write
-	// TODO
+	printf("nagi_shutdown: done.\n"); fflush(stdout);
 }

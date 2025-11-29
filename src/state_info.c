@@ -428,6 +428,7 @@ static u16 state_get_diz(u16 s_num, SAVE *s_item, u32 *s_date)
 	char state_id[ID_SIZE+1];
 	//u8 temp40[64];
 	VSTRING *name_temp;
+	size_t bytes_read;
 	
 	s_item->num = s_num;
 	
@@ -444,9 +445,11 @@ static u16 state_get_diz(u16 s_num, SAVE *s_item, u32 *s_date)
 	}
 
 	*s_date = stream_get_date(state_stream);
-	fread(s_item->diz, sizeof(char), sizeof(s_item->diz), state_stream);
-	fseek(state_stream, 2, SEEK_CUR);	
-	fread(state_id, sizeof(char), sizeof(state.id), state_stream);	
+	bytes_read = fread(s_item->diz, sizeof(char), sizeof(s_item->diz), state_stream);
+	(void)bytes_read;
+	fseek(state_stream, 2, SEEK_CUR);
+	bytes_read = fread(state_id, sizeof(char), sizeof(state.id), state_stream);
+	(void)bytes_read;	
 	fclose(state_stream);
 
 	if (strcmp(state_id, state.id) != 0)

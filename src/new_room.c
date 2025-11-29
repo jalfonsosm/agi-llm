@@ -34,6 +34,7 @@ _NewRoom                         cseg     00001792 0000011A
 #include "logic/logic_base.h"
 #include "trace.h"
 
+
 // VERY IMPORTANT.. returns 0.. not the code pointer.
 
 u8 *cmd_new_room(u8 *c)
@@ -49,12 +50,15 @@ u8 *cmd_new_room_v(u8 *c)
 u8 *new_room(u16 room_num)
 {
 	VIEW *si;
-	
+	fprintf(stderr, "[NEW_ROOM] Called with room_num=%d, old var[0]=%d\n", room_num, state.var[0]);
+	fflush(stderr);
+
 	sound_stop();
 	//clear_memory();	// should be free'd in other functions
 	events_clear();
 	script_new();
 	script_allow();
+
 
 	for (si=objtable ; si<objtable_tail; si++)
 	{
@@ -85,16 +89,20 @@ u8 *new_room(u16 room_num)
 
 	state.var[V01_OLDROOM] = state.var[V00_ROOM0];
 	state.var[V00_ROOM0] = room_num;
+	printf("[NEW_ROOM] Set room var[0] = %d, state.var addr = %p, &state = %p\n",
+	       room_num, (void*)state.var, (void*)&state);
 	state.var[V05_OBJBORDER] = 0;
 	state.var[V04_OBJECT] = 0;
 	state.var[V16_EGOVIEWRES] = objtable->view_cur;
 
 	state.var[V08_FREEMEM] = 10;
-	
+	printf("[NEW_ROOM] Before logic_load: var[0] = %d\n", state.var[0]);
+
 	// not in v2.936 and later
 	//volumes_close();
 
 	logic_load(room_num);
+	printf("[NEW_ROOM] After logic_load: var[0] = %d\n", state.var[0]);
 	if (trace_logic != 0)
 	{
 		logic_load_2(trace_logic);
@@ -123,5 +131,8 @@ u8 *new_room(u16 room_num)
 	status_line_write();
 	input_redraw();
 
+	printf("[NEW_ROOM] Exiting new_room: var[0] = %d\n", state.var[0]);
+	fflush(stdout);
+	fflush(stderr);
 	return 0;
 }

@@ -20,3 +20,11 @@ out
 CMakeSettings.json
 
 build
+games
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+.Python

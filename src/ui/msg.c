@@ -144,10 +144,6 @@ u8 *cmd_display_v(u8 *c)
 	return c;
 }
 
-
-
-
-
 int message_box(const char *var8)
 {
 	u32 temp;

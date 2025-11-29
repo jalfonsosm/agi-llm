@@ -214,7 +214,7 @@ typedef struct rect_struct AGIRECT;
 // number of chars
 #define ID_SIZE 20
 // 00 .. 182
-#define CMD_MAX 182
+#define CMD_MAX 183
 #define EVAL_MAX 19
 
 struct cmap_struct

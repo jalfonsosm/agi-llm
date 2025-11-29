@@ -160,7 +160,8 @@ static void lzw_buff_fill(u16 cur_byte)	// cur point?
 	
 	if ( temp2 != 0)
 	{
-		fread(lzw_buff+cur_byte, sizeof(u8), temp2, lzw_res_stream);
+		size_t bytes_read = fread(lzw_buff+cur_byte, sizeof(u8), temp2, lzw_res_stream);
+		(void)bytes_read;
 		//lib_read(lzw_res_stream, lzw_buff+cur_byte, temp2);
 	}
 }

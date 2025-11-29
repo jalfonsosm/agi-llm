@@ -8,7 +8,7 @@ set_target_properties(nagi PROPERTIES
 # All include files references are relative to the source file (not ideal)
 # target_include_directories(nagi PRIVATE .)
 
-set(base_sources 
+set(base_sources
     agi.c
     agi.h
     agi_string.c
@@ -45,13 +45,11 @@ set(base_sources
     state_info.h
     state_io.c
     state_io.h
-    # template_code.c
-    # template_header.h
     trace.c
     trace.h
 )
 
-set(logic_sources 
+set(logic_sources
     logic/arithmetic.c
     logic/arithmetic.h
     logic/cmd_table.c
@@ -62,9 +60,11 @@ set(logic_sources
     logic/logic_eval.h
     logic/logic_execute.c
     logic/logic_execute.h
+    logic/llm.c
+    logic/llm.h
 )
 
-set(picture_sources 
+set(picture_sources
     picture/pic_add.c
     picture/pic_add.h
     picture/pic_render.c
@@ -75,7 +75,7 @@ set(picture_sources
     picture/sbuf_util.h
 )
 
-set(res_sources 
+set(res_sources
     res/res.h
     res/res_dir.c
     res/res_lzw.c
@@ -83,7 +83,7 @@ set(res_sources
     res/res_vol.c
 )
 
-set(sound_sources 
+set(sound_sources
     sound/pcm_out.c
     sound/pcm_out.h
     sound/pcm_out_sdl.c
@@ -111,7 +111,7 @@ set(video_sources
     sys/vid_render.h
 )
 
-set(sys_sources 
+set(sys_sources
     sys/agi_file.c
     sys/agi_file.h
     sys/delay.c
@@ -126,8 +126,6 @@ set(sys_sources
     sys/glob_sys.h
     sys/ini_config.c
     sys/ini_config.h
-    # sys/lib_wrapper.c
-    # sys/lib_wrapper.h
     sys/mem_wrap.c
     sys/mem_wrap.h
     sys/memory.c
@@ -144,7 +142,7 @@ set(sys_sources
     sys/vstring.h
 )
 
-set(ui_sources 
+set(ui_sources
     ui/agi_text.c
     ui/agi_text.h
     ui/cmd_input.c
@@ -173,14 +171,14 @@ set(ui_sources
     ui/window.h
 )
 
-set(version_sources 
+set(version_sources
     version/agi_crc.c
     version/agi_crc.h
     version/standard.c
     version/standard.h
 )
 
-set(view_sources 
+set(view_sources
     view/obj_base.c
     view/obj_base.h
     view/obj_blit.c
@@ -216,24 +214,147 @@ set(lib_sources
     lib/utf8_decode.h
 )
 
-target_sources(nagi
-    PRIVATE
-    ${base_sources} 
-    ${logic_sources} 
-    ${picture_sources} 
-    ${res_sources} 
-    ${sound_sources} 
-    ${sys_sources} 
-    ${ui_sources} 
-    ${version_sources} 
-    ${video_sources}
-    ${view_sources} 
-    ${lib_sources} 
+
+# LLM integration (llama.cpp based)
+set(llm_sources
+    llm/llm_context.c
+    llm/llm_context.h
+    llm/llm_parser.c
+    llm/llm_parser.h
 )
 
-target_link_libraries(nagi PRIVATE
-    SDL3::SDL3
+target_sources(nagi
+    PRIVATE
+    ${base_sources}
+    ${logic_sources}
+    ${picture_sources}
+    ${res_sources}
+    ${sound_sources}
+    ${sys_sources}
+    ${ui_sources}
+    ${version_sources}
+    ${video_sources}
+    ${view_sources}
+    ${lib_sources}
 )
+
+# Options for optional features
+option(NAGI_ENABLE_LLM "Enable LLM (llama.cpp) support" OFF)
+option(NAGI_USE_STATIC_LIBS "Use static libraries for llama.cpp" ON)
+
+# Link SDL3 (configured by AddSDL3.cmake from root CMakeLists.txt)
+target_link_libraries(nagi PRIVATE
+    ${SDL3_TARGET}
+)
+
+
+# LLM (llama.cpp) support
+if(NAGI_ENABLE_LLM)
+    target_sources(nagi PRIVATE ${llm_sources})
+
+    # Try to find llama.cpp
+    find_path(LLAMA_INCLUDE_DIR llama.h
+        PATHS
+            ${LLAMA_DIR}/include
+            /usr/include
+            /usr/local/include
+    )
+    find_library(LLAMA_LIBRARY
+        NAMES llama libllama.a
+        PATHS
+            ${LLAMA_DIR}/lib
+            /usr/lib
+            /usr/local/lib
+    )
+
+    if(LLAMA_INCLUDE_DIR AND LLAMA_LIBRARY)
+        target_include_directories(nagi PRIVATE ${LLAMA_INCLUDE_DIR})
+        target_link_libraries(nagi PRIVATE ${LLAMA_LIBRARY})
+        target_compile_definitions(nagi PRIVATE NAGI_HAS_LLM=1)
+        message(STATUS "LLM (llama.cpp) support enabled")
+
+        # Check for common (llama.cpp utilities)
+        find_path(LLAMA_COMMON_INCLUDE common.h
+            PATHS ${LLAMA_DIR}/common /usr/include/llama /usr/local/include/llama
+        )
+        if(LLAMA_COMMON_INCLUDE)
+            target_include_directories(nagi PRIVATE ${LLAMA_COMMON_INCLUDE})
+        endif()
+    else()
+        message(WARNING "llama.cpp not found - LLM support disabled. Set LLAMA_DIR to llama.cpp installation.")
+        target_compile_definitions(nagi PRIVATE NAGI_NO_LLM=1)
+    endif()
+else()
+    target_compile_definitions(nagi PRIVATE NAGI_NO_LLM=1)
+    message(STATUS "LLM support disabled by option")
+endif()
+
+# Math library (needed by llama.cpp on Unix)
+if(UNIX)
+    target_link_libraries(nagi PRIVATE m dl)
+endif()
+
+# Compile definitions (needed for strdup, strcasecmp on some systems)
+target_compile_definitions(nagi PRIVATE _DEFAULT_SOURCE)
+
+# Compiler warning flags - applied only to nagi, not to SDL3
+target_compile_options(nagi PRIVATE
+    # Basic flags
+    -fsigned-char
+    -fno-strict-aliasing
+    -fwrapv
+
+    # Warnings (common to GCC and Clang)
+    -Wall
+    -Wextra
+    -Wcast-align
+    -Wcast-qual
+    -Wconversion
+    -Wdouble-promotion
+    -Wformat=2
+    -Wmissing-declarations
+    -Wmissing-prototypes
+    -Wnull-dereference
+    -Wold-style-definition
+    -Wpointer-arith
+    -Wshadow
+    -Wshift-negative-value
+    -Wstrict-prototypes
+    -Wswitch-default
+    -Wundef
+    -Wuninitialized
+    -Wwrite-strings
+
+    # Errors for specific issues
+    -Werror=implicit-function-declaration
+    -Werror=return-type
+    -Werror=unused-result
+)
+
+# GCC-specific warnings
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(nagi PRIVATE
+        -Wduplicated-branches
+        -Wduplicated-cond
+        -Wformat-overflow=2
+        -Wformat-signedness
+        -Wformat-truncation=2
+        -Winit-self
+        -Wlogical-op
+        -Wshift-overflow=2
+        -Wstrict-overflow=2
+    )
+endif()
+
+# Clang-specific warnings
+if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+    target_compile_options(nagi PRIVATE
+        -Wconditional-uninitialized
+        -Wmissing-variable-declarations
+        -Wunreachable-code-break
+        -Wunreachable-code-return
+    )
+endif()
 
 set_target_properties(nagi PROPERTIES
     RUNTIME_OUTPUT_NAME nagi
@@ -247,17 +368,18 @@ if (WIN32)
     )
 endif()
 
+# Copy data files (fonts, config) to build directory
+set(NAGI_DATA_FILES
+    ${CMAKE_SOURCE_DIR}/bin/font_4x8.nbf
+    ${CMAKE_SOURCE_DIR}/bin/font_8x8.nbf
+    ${CMAKE_SOURCE_DIR}/bin/font_16x16.nbf
+    ${CMAKE_SOURCE_DIR}/bin/nagi.ini
+    ${CMAKE_SOURCE_DIR}/bin/standard.ini
+)
 
-# One-off tools
-
-# Hex dump tool?
-# add_executable(read_agidata read_agidata.c)
-# set_target_properties(read_agidata PROPERTIES
-#     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
-# )
-
-# Used to convert fonts stored as C code to a binary file.
-# add_executable(savefont tools/savefont.c)
-# set_target_properties(savefont PROPERTIES
-#     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
-# )
+add_custom_command(TARGET nagi POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${NAGI_DATA_FILES}
+        ${CMAKE_BINARY_DIR}
+    COMMENT "Copying NAGI data files to build directory"
+)

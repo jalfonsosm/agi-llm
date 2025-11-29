@@ -143,16 +143,21 @@ void gfx_init(void)
 
 void gfx_shutdown()
 {
+	printf("gfx_shutdown: ch_shutdown...\n"); fflush(stdout);
 	ch_shutdown();
+	printf("gfx_shutdown: render_shutdown...\n"); fflush(stdout);
 	render_shutdown();
 
+	printf("gfx_shutdown: vid_free...\n"); fflush(stdout);
 	vid_free();
+	printf("gfx_shutdown: vid_shutdown...\n"); fflush(stdout);
 	vid_shutdown();
 	if (gfx_picbuff != 0)
 	{
 		a_free(gfx_picbuff);
 		gfx_picbuff = 0;
 	}
+	printf("gfx_shutdown: done.\n"); fflush(stdout);
 }
 
 // using available open resources.. refresh the gfx

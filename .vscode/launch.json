@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Nagi (build/nagi)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/nagi",
+            "args": ["../games/kq1"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/build",
+            "environment": [],
+            "externalConsole": true,
+            "MIMode": "lldb",
+            "preLaunchTask": "build-nagi-debug"
+        }
+    ]
+}
