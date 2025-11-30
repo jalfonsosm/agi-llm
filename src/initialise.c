@@ -70,6 +70,10 @@ _RoomInit                        cseg     000012DE 00000015
 
 #include "log.h"
 
+#ifdef NAGI_HAS_LLM
+#include "llm/llm_parser.h"
+#endif
+
 
 /* PROTOTYPES	---	---	---	---	---	---	--- */
 // reads ini file and inits nagi
@@ -187,6 +191,26 @@ void nagi_init()
 	
 	// allocate memory for the LZW dictionary
 	lzw_init();
+
+	#ifdef NAGI_HAS_LLM
+	/* Initialize LLM if available. Prefer compile-time default model path,
+	   otherwise fall back to environment variable `NAGI_LLM_MODEL_PATH`. */
+	const char *llm_model_path = NULL;
+#if defined(NAGI_DEFAULT_LLM_MODEL_PATH)
+	llm_model_path = NAGI_DEFAULT_LLM_MODEL_PATH;
+#else
+	llm_model_path = getenv("NAGI_LLM_MODEL_PATH");
+#endif
+	if (llm_model_path && llm_model_path[0]) {
+		if (!llm_parser_init(llm_model_path, NULL)) {
+			fprintf(stderr, "LLM initialization failed for model: %s\n", llm_model_path);
+		} else {
+			fprintf(stderr, "LLM initialized with model: %s\n", llm_model_path);
+		}
+	} else {
+		fprintf(stderr, "LLM model path not provided; skipping LLM initialization\n");
+	}
+#endif
 }
 
 void agi_init()
@@ -322,6 +346,11 @@ void nagi_shutdown(void)
 	// gfx_shutdown
 	printf("nagi_shutdown: gfx_shutdown...\n"); fflush(stdout);
 	gfx_shutdown();
+
+#ifdef NAGI_HAS_LLM
+        /* Shutdown LLM cleanly */
+        llm_parser_shutdown();
+#endif
 	
 	printf("nagi_shutdown: SDL_Quit...\n"); fflush(stdout);
 	SDL_Quit();

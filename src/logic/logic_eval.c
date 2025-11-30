@@ -34,6 +34,12 @@ CmdCompareStrns                  cseg     000009DB 0000000F
 // for cmd_said
 #include "../ui/parse.h"
 
+#ifdef NAGI_ENABLE_LLM
+/* LLM interfaces for fallback matching */
+#include "../llm/llm_parser.h"
+#include "../llm/llm_context.h"
+#endif
+
 // byte-order support
 #include "../sys/endian.h"
 
@@ -194,8 +200,12 @@ u8 cmd_said()
 	u16 word_bad;
 	u16 num;
 	u16 cur;
+	/* Save start of the said-word list so we can reconstruct it later */
+	u8 *said_list_start = logic_data;
+	u16 orig_word_count = 0;
 	
 	word_remaining = *(logic_data++);	// number of words to check.
+	orig_word_count = word_remaining;
 	word_bad = word_total;
 	
 	if (word_bad != 0)
@@ -235,6 +245,30 @@ u8 cmd_said()
 	}
 	else
 	{
+		#ifdef NAGI_ENABLE_LLM
+		/* Attempt LLM fallback: reconstruct expected word IDs and ask LLM if last input matches */
+		/* LLM fallback: reconstruct expected list and query helper */
+		if (llm_parser_ready()) {
+			const char *last_input = llm_context_get_last_player_input();
+			if (last_input) {
+				int expected[64];
+				int ecount = 0;
+				u8 *ptr = said_list_start + 1; /* skip count byte */
+				for (int i = 0; i < orig_word_count && ecount < 64; ++i) {
+					u16 w = load_le_16(ptr);
+					ptr += 2;
+					expected[ecount++] = w;
+				}
+
+				if (llm_parser_matches_expected(last_input, llm_context_build(), expected, ecount, 0.5f)) {
+					flag_set(F04_SAIDACCEPT);
+					return 1;
+				}
+			}
+		}
+		/* No LLM match: advance logic_data as before and fail */
+		#endif
+
 		logic_data += word_remaining << 1;
 		return 0;
 	}

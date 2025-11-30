@@ -211,6 +211,9 @@ void llm_context_on_flag_change(int flag_num, int new_value);
 void llm_context_on_var_change(int var_num, int new_value);
 void llm_context_on_player_input(const char *input);
 
+/* Get the most recent raw player input text (internal buffer pointer, do not free) */
+const char *llm_context_get_last_player_input(void);
+
 /*
  * Serialize context to JSON for external LLM APIs
  *

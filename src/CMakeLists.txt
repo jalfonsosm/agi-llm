@@ -7,6 +7,7 @@ set_target_properties(nagi PROPERTIES
 
 # All include files references are relative to the source file (not ideal)
 # target_include_directories(nagi PRIVATE .)
+option(NAGI_ENABLE_LLM "Enable LLM (llama.cpp) support" ON)
 
 set(base_sources
     agi.c
@@ -214,14 +215,14 @@ set(lib_sources
     lib/utf8_decode.h
 )
 
-
-# LLM integration (llama.cpp based)
-set(llm_sources
-    llm/llm_context.c
-    llm/llm_context.h
-    llm/llm_parser.c
-    llm/llm_parser.h
-)
+if(NAGI_ENABLE_LLM)
+    set(llm_sources
+        llm/llm_context.c
+        llm/llm_context.h
+        llm/llm_parser.c
+        llm/llm_parser.h
+    )
+endif()
 
 target_sources(nagi
     PRIVATE
@@ -238,60 +239,129 @@ target_sources(nagi
     ${lib_sources}
 )
 
-# Options for optional features
-option(NAGI_ENABLE_LLM "Enable LLM (llama.cpp) support" OFF)
-option(NAGI_USE_STATIC_LIBS "Use static libraries for llama.cpp" ON)
-
-# Link SDL3 (configured by AddSDL3.cmake from root CMakeLists.txt)
-target_link_libraries(nagi PRIVATE
-    ${SDL3_TARGET}
-)
-
-
-# LLM (llama.cpp) support
 if(NAGI_ENABLE_LLM)
     target_sources(nagi PRIVATE ${llm_sources})
+endif()
 
-    # Try to find llama.cpp
-    find_path(LLAMA_INCLUDE_DIR llama.h
-        PATHS
-            ${LLAMA_DIR}/include
-            /usr/include
-            /usr/local/include
+target_link_libraries(nagi PRIVATE ${SDL3_TARGET})
+
+include(ExternalProject)
+if(NAGI_ENABLE_LLM)
+    set(LLAMA_PREFIX ${CMAKE_BINARY_DIR}/_deps/llama)
+
+    set(LLAMA_CMAKE_FLAGS
+        -DLLAMA_BUILD_SHARED=OFF
+        -DLLAMA_STATIC=ON
+        -DBUILD_SHARED_LIBS=OFF
+        -DLLAMA_ALL_WARNINGS=OFF
+        -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+        -DLLAMA_NATIVE=OFF
+        -DLLAMA_AVX=OFF
+        -DLLAMA_AVX2=OFF
+        -DLLAMA_AVX512=OFF
+        -DLLAMA_FMA=OFF
+        -DLLAMA_F16C=OFF
     )
-    find_library(LLAMA_LIBRARY
-        NAMES llama libllama.a
-        PATHS
-            ${LLAMA_DIR}/lib
-            /usr/lib
-            /usr/local/lib
-    )
 
-    if(LLAMA_INCLUDE_DIR AND LLAMA_LIBRARY)
-        target_include_directories(nagi PRIVATE ${LLAMA_INCLUDE_DIR})
-        target_link_libraries(nagi PRIVATE ${LLAMA_LIBRARY})
-        target_compile_definitions(nagi PRIVATE NAGI_HAS_LLM=1)
-        message(STATUS "LLM (llama.cpp) support enabled")
-
-        # Check for common (llama.cpp utilities)
-        find_path(LLAMA_COMMON_INCLUDE common.h
-            PATHS ${LLAMA_DIR}/common /usr/include/llama /usr/local/include/llama
-        )
-        if(LLAMA_COMMON_INCLUDE)
-            target_include_directories(nagi PRIVATE ${LLAMA_COMMON_INCLUDE})
+    if(APPLE)
+        if(NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+            execute_process(COMMAND sw_vers -productVersion
+                OUTPUT_VARIABLE _swvers OUTPUT_STRIP_TRAILING_WHITESPACE)
+            string(REGEX MATCH "^[0-9]+\.[0-9]+" _mac_ver "${_swvers}")
+            if(_mac_ver)
+                set(CMAKE_OSX_DEPLOYMENT_TARGET "${_mac_ver}" CACHE STRING "macOS deployment target" FORCE)
+            endif()
         endif()
-    else()
-        message(WARNING "llama.cpp not found - LLM support disabled. Set LLAMA_DIR to llama.cpp installation.")
-        target_compile_definitions(nagi PRIVATE NAGI_NO_LLM=1)
+        
+        if(CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS "10.15")
+            set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "macOS deployment target" FORCE)
+        endif()
+
+        list(APPEND LLAMA_CMAKE_FLAGS
+            -DLLAMA_METAL=ON
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}
+            -DCMAKE_OSX_ARCHITECTURES=arm64
+        )
     endif()
+
+    ExternalProject_Add(llama_cpp
+        GIT_REPOSITORY "https://github.com/ggerganov/llama.cpp.git"
+        GIT_TAG master
+        PREFIX ${LLAMA_PREFIX}
+        UPDATE_COMMAND ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> git submodule update --init --recursive
+        CONFIGURE_COMMAND ${CMAKE_COMMAND} -S <SOURCE_DIR> -B <BINARY_DIR> ${LLAMA_CMAKE_FLAGS}
+        BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR>
+        INSTALL_COMMAND ""
+    )
+    
+    set(LLAMA_SOURCE_DIR ${LLAMA_PREFIX}/src/llama_cpp)
+    set(LLAMA_BUILD_DIR ${LLAMA_PREFIX}/src/llama_cpp-build)
+    set(LLAMA_INCLUDE_DIR ${LLAMA_SOURCE_DIR}/include)
+
+    add_dependencies(nagi llama_cpp)
+    
+    target_include_directories(nagi PRIVATE 
+        ${LLAMA_SOURCE_DIR}
+        ${LLAMA_INCLUDE_DIR}
+        ${LLAMA_SOURCE_DIR}/ggml/include
+    )
+
+    set(LLAMA_LIB ${LLAMA_BUILD_DIR}/src/libllama.a)
+    set(GGML_LIB ${LLAMA_BUILD_DIR}/ggml/src/libggml.a)
+    set(GGML_BASE_LIB ${LLAMA_BUILD_DIR}/ggml/src/libggml-base.a)
+
+    set(GGML_BACKEND_LIBS
+        ${LLAMA_BUILD_DIR}/ggml/src/ggml-blas/libggml-blas.a
+        ${LLAMA_BUILD_DIR}/ggml/src/libggml-cpu.a
+        ${LLAMA_BUILD_DIR}/ggml/src/ggml-metal/libggml-metal.a
+    )
+
+    set(NAGI_LL_LIBS
+        ${LLAMA_LIB}
+        ${GGML_LIB}
+        ${GGML_BASE_LIB}
+    )
+    
+    list(APPEND NAGI_LL_LIBS ${GGML_BACKEND_LIBS})
+
+    target_link_libraries(nagi PRIVATE ${NAGI_LL_LIBS})
+
+    if(APPLE)
+        target_link_libraries(nagi PRIVATE "-framework Accelerate")
+        target_link_libraries(nagi PRIVATE "-framework Metal" "-framework MetalPerformanceShaders")
+    endif()
+        
+    set(DEFAULT_MODEL_PATH "${CMAKE_BINARY_DIR}/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf")
+    target_compile_definitions(nagi PRIVATE 
+        NAGI_HAS_LLM=1
+        NAGI_DEFAULT_LLM_MODEL_PATH="${DEFAULT_MODEL_PATH}"
+    )
+    
+    add_custom_target(download_model
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/models"
+        COMMAND curl -L -o "${DEFAULT_MODEL_PATH}" 
+            "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
+        COMMENT "Downloading TinyLlama model..."
+    )
+    
+    add_dependencies(nagi download_model)
+    
+    message(STATUS "LLM (llama.cpp) support enabled - static library")
+    message(STATUS "Llama.cpp include dir: ${LLAMA_SOURCE_DIR}")
 else()
     target_compile_definitions(nagi PRIVATE NAGI_NO_LLM=1)
-    message(STATUS "LLM support disabled by option")
+    message(STATUS "LLM support disabled")
 endif()
 
 # Math library (needed by llama.cpp on Unix)
 if(UNIX)
-    target_link_libraries(nagi PRIVATE m dl)
+    target_link_libraries(nagi PRIVATE m dl pthread)
+endif()
+
+if(APPLE)
+    target_link_libraries(nagi PRIVATE c++)
+else()
+    target_link_libraries(nagi PRIVATE stdc++)
 endif()
 
 # Compile definitions (needed for strdup, strcasecmp on some systems)

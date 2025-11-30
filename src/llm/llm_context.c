@@ -617,3 +617,17 @@ int llm_context_load_flag_descs(const char *filename)
     printf("LLM Context: Loaded %d flag descriptions\n", count);
     return count;
 }
+
+/* Return last raw player input stored in history (or NULL) */
+const char *llm_context_get_last_player_input(void)
+{
+    if (g_llm_context.history_count == 0) return NULL;
+
+    for (int i = g_llm_context.history_count - 1; i >= 0; --i) {
+        int idx = (g_llm_context.history_head + i) % LLM_MAX_HISTORY_ENTRIES;
+        if (g_llm_context.history[idx].type == CTX_PLAYER_INPUT) {
+            return g_llm_context.history[idx].text;
+        }
+    }
+    return NULL;
+}

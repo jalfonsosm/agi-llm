@@ -31,6 +31,10 @@ _WordNext                        cseg     00001BE4 00000020
 
 #define WORD_BUF_SIZE 10
 
+#ifdef NAGI_ENABLE_LLM
+#include "../llm/llm_context.h"
+#endif
+
 void parse(const char *string);
 u8 *cmd_parse(u8 *c);
 static void parse_read(const char *s);
@@ -58,6 +62,11 @@ void parse(const char *string)
 
 	memset(word_string, 0, sizeof(word_string));
 	memset(word_num, 0, sizeof(word_num));
+
+	#ifdef NAGI_ENABLE_LLM
+	/* Inform context about player input (deferred LLM checks happen in cmd_said) */
+	llm_context_on_player_input(string);
+	#endif
 
 	parse_read(string);
 	word_total = 0;

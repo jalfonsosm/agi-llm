@@ -3,49 +3,35 @@
  *
  * Implementation using llama.cpp for natural language understanding.
  *
- * NOTE: This file requires llama.cpp to be linked. If building without
- * LLM support, define NAGI_NO_LLM to use stub implementations.
+ * NOTE: This file requires llama.cpp to be linked.
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdarg.h>
 
 #include "llm_parser.h"
 #include "llm_context.h"
 
-#ifndef NAGI_NO_LLM
-/* llama.cpp headers */
-#include "llama.h"
-#include "common.h"
-#endif
-
-/* Maximum vocabulary entries */
+/* Maximum vocabulary entries (used by common code) */
 #define MAX_VOCAB_ENTRIES 2048
 
-/* Internal state structure */
-struct llm_state {
-#ifndef NAGI_NO_LLM
-    struct llama_model *model;
-    struct llama_context *ctx;
-    struct llama_sampler *sampler;
-#endif
-    int initialized;
-    char last_error[256];
+/* Default system prompt for AGI games (used by both real and stub modes) */
+static const char *DEFAULT_SYSTEM_PROMPT =
+    "You are a parser for a classic Sierra AGI adventure game. "
+    "Your task is to convert natural language player input into "
+    "AGI-compatible verb-noun commands.\n\n"
+    "Rules:\n"
+    "1. Extract the main VERB and NOUN from the input\n"
+    "2. Use simple words that match the game's vocabulary\n"
+    "3. If unsure, pick the most likely interpretation\n"
+    "4. Output format: VERB,NOUN (e.g., 'look,door' or 'get,key')\n"
+    "5. For movement, use: north, south, east, west, up, down\n"
+    "6. Common verbs: look, get, open, close, use, talk, give, push, pull\n\n";
 
-    /* System prompt */
-    char system_prompt[LLM_MAX_PROMPT_SIZE];
-
-    /* Game-specific info */
-    char game_info[1024];
-
-    /* Vocabulary */
-    llm_vocab_entry_t vocab[MAX_VOCAB_ENTRIES];
-    int vocab_count;
-};
-
-/* Global instances */
+/* Global instances (defined in the compilation unit so both modes have symbols) */
 llm_state_t *g_llm_state = NULL;
 llm_config_t g_llm_config = {
     .model_path = "",
@@ -60,33 +46,29 @@ llm_config_t g_llm_config = {
     .verbose = 0
 };
 
-/* Default system prompt for AGI games */
-static const char *DEFAULT_SYSTEM_PROMPT =
-    "You are a parser for a classic Sierra AGI adventure game. "
-    "Your task is to convert natural language player input into "
-    "AGI-compatible verb-noun commands.\n\n"
-    "Rules:\n"
-    "1. Extract the main VERB and NOUN from the input\n"
-    "2. Use simple words that match the game's vocabulary\n"
-    "3. If unsure, pick the most likely interpretation\n"
-    "4. Output format: VERB,NOUN (e.g., 'look,door' or 'get,key')\n"
-    "5. For movement, use: north, south, east, west, up, down\n"
-    "6. Common verbs: look, get, open, close, use, talk, give, push, pull\n\n";
+/* llama.cpp headers */
+#include "llama.h"
 
-/*
- * Set error message
- */
-static void set_error(const char *fmt, ...)
-{
-    if (g_llm_state) {
-        va_list args;
-        va_start(args, fmt);
-        vsnprintf(g_llm_state->last_error, sizeof(g_llm_state->last_error), fmt, args);
-        va_end(args);
-    }
-}
+/* Forward declare error helper to avoid implicit declaration warnings */
+static void set_error(const char *fmt, ...);
 
-#ifndef NAGI_NO_LLM
+/* Internal state structure (full definition used only in this compilation unit) */
+struct llm_state {
+    /* For real LLM backend */
+    struct llama_model *model;
+    struct llama_context *ctx;
+    struct llama_sampler *sampler;
+
+    /* Common fields */
+    int initialized;
+    char last_error[256];
+    char system_prompt[LLM_MAX_PROMPT_SIZE];
+    char game_info[1024];
+    llm_vocab_entry_t vocab[MAX_VOCAB_ENTRIES];
+    int vocab_count;
+};
+
+
 /*
  * Initialize the LLM parser with llama.cpp
  */
@@ -101,7 +83,7 @@ int llm_parser_init(const char *model_path, const llm_config_t *config)
     }
 
     /* Allocate state */
-    g_llm_state = (llm_state_t *)calloc(1, sizeof(llm_state_t));
+    g_llm_state = (llm_state_t *)calloc(1, sizeof(struct llm_state));
     if (!g_llm_state) {
         fprintf(stderr, "LLM Parser: Failed to allocate state\n");
         return 0;
@@ -127,7 +109,7 @@ int llm_parser_init(const char *model_path, const llm_config_t *config)
     model_params.n_gpu_layers = g_llm_config.use_gpu ? 99 : 0;
 
     printf("LLM Parser: Loading model from %s...\n", g_llm_config.model_path);
-    g_llm_state->model = llama_load_model_from_file(g_llm_config.model_path, model_params);
+    g_llm_state->model = llama_model_load_from_file(g_llm_config.model_path, model_params);
     if (!g_llm_state->model) {
         set_error("Failed to load model: %s", g_llm_config.model_path);
         fprintf(stderr, "LLM Parser: %s\n", g_llm_state->last_error);
@@ -143,11 +125,11 @@ int llm_parser_init(const char *model_path, const llm_config_t *config)
     ctx_params.n_threads = g_llm_config.n_threads;
     ctx_params.n_threads_batch = g_llm_config.n_threads;
 
-    g_llm_state->ctx = llama_new_context_with_model(g_llm_state->model, ctx_params);
+    g_llm_state->ctx = llama_init_from_model(g_llm_state->model, ctx_params);
     if (!g_llm_state->ctx) {
         set_error("Failed to create context");
         fprintf(stderr, "LLM Parser: %s\n", g_llm_state->last_error);
-        llama_free_model(g_llm_state->model);
+        llama_model_free(g_llm_state->model);
         free(g_llm_state);
         g_llm_state = NULL;
         return 0;
@@ -187,7 +169,7 @@ void llm_parser_shutdown(void)
         llama_free(g_llm_state->ctx);
     }
     if (g_llm_state->model) {
-        llama_free_model(g_llm_state->model);
+        llama_model_free(g_llm_state->model);
     }
 
     llama_backend_free();
@@ -240,7 +222,8 @@ int llm_parser_parse(const char *input, const char *context, llm_parse_result_t 
     n_tokens = llama_n_ctx(g_llm_state->ctx);
     tokens = (llama_token *)malloc(n_tokens * sizeof(llama_token));
 
-    n_prompt_tokens = llama_tokenize(g_llm_state->model, prompt, strlen(prompt),
+    /* Tokenize using the model's vocabulary */
+    n_prompt_tokens = llama_tokenize(llama_model_get_vocab(g_llm_state->model), prompt, (int)strlen(prompt),
                                       tokens, n_tokens, true, true);
     if (n_prompt_tokens < 0) {
         set_error("Failed to tokenize prompt");
@@ -248,8 +231,8 @@ int llm_parser_parse(const char *input, const char *context, llm_parse_result_t 
         return 0;
     }
 
-    /* Clear KV cache */
-    llama_kv_cache_clear(g_llm_state->ctx);
+    /* Clear KV cache / memory */
+    llama_memory_clear(llama_get_memory(g_llm_state->ctx), false);
 
     /* Create batch and process prompt */
     struct llama_batch batch = llama_batch_get_one(tokens, n_prompt_tokens);
@@ -269,13 +252,13 @@ int llm_parser_parse(const char *input, const char *context, llm_parse_result_t 
         llama_token new_token = llama_sampler_sample(g_llm_state->sampler, g_llm_state->ctx, -1);
 
         /* Check for end of generation */
-        if (llama_token_is_eog(g_llm_state->model, new_token)) {
+        if (llama_vocab_is_eog(llama_model_get_vocab(g_llm_state->model), new_token)) {
             break;
         }
 
         /* Convert token to text */
         char piece[64];
-        int piece_len = llama_token_to_piece(g_llm_state->model, new_token,
+        int piece_len = llama_token_to_piece(llama_model_get_vocab(g_llm_state->model), new_token,
                                               piece, sizeof(piece), 0, true);
         if (piece_len > 0 && response_len + piece_len < max_response) {
             memcpy(response + response_len, piece, piece_len);
@@ -293,13 +276,37 @@ int llm_parser_parse(const char *input, const char *context, llm_parse_result_t 
     free(tokens);
 
     /* Parse response to extract verb/noun */
-    result->success = llm_parser_response_to_words(response,
-        (int[]){result->verb_id, result->noun_id}, 2);
+    {
+        int word_ids[2] = { -1, -1 };
+        int got = llm_parser_response_to_words(response, word_ids, 2);
+        if (got > 0) {
+            result->verb_id = word_ids[0];
+            if (got > 1) result->noun_id = word_ids[1];
 
-    if (result->success) {
-        result->confidence = 0.8f;  /* TODO: Calculate actual confidence */
-        snprintf(result->canonical, sizeof(result->canonical), "%s %s",
-                 result->verb_str, result->noun_str);
+            /* Fill verb_str and noun_str from vocabulary if possible */
+            for (int i = 0; i < g_llm_state->vocab_count; ++i) {
+                llm_vocab_entry_t *e = &g_llm_state->vocab[i];
+                if (e->word_id == result->verb_id) {
+                    strncpy(result->verb_str, e->word, sizeof(result->verb_str)-1);
+                    result->verb_str[sizeof(result->verb_str)-1] = '\0';
+                }
+                if (e->word_id == result->noun_id) {
+                    strncpy(result->noun_str, e->word, sizeof(result->noun_str)-1);
+                    result->noun_str[sizeof(result->noun_str)-1] = '\0';
+                }
+            }
+
+            result->success = 1;
+            result->confidence = 0.8f; /* TODO: compute real score */
+            if (result->noun_str[0])
+                snprintf(result->canonical, sizeof(result->canonical), "%s %s",
+                         result->verb_str, result->noun_str);
+            else
+                snprintf(result->canonical, sizeof(result->canonical), "%s",
+                         result->verb_str);
+        } else {
+            result->success = 0;
+        }
     }
 
     return result->success;
@@ -332,15 +339,15 @@ int llm_parser_generate(const char *prompt, const char *context,
     n_tokens = llama_n_ctx(g_llm_state->ctx);
     tokens = (llama_token *)malloc(n_tokens * sizeof(llama_token));
 
-    n_prompt_tokens = llama_tokenize(g_llm_state->model, full_prompt, strlen(full_prompt),
+    n_prompt_tokens = llama_tokenize(llama_model_get_vocab(g_llm_state->model), full_prompt, (int)strlen(full_prompt),
                                       tokens, n_tokens, true, true);
     if (n_prompt_tokens < 0) {
         free(tokens);
         return 0;
     }
 
-    /* Clear KV cache and decode prompt */
-    llama_kv_cache_clear(g_llm_state->ctx);
+    /* Clear KV cache / memory and decode prompt */
+    llama_memory_clear(llama_get_memory(g_llm_state->ctx), false);
     struct llama_batch batch = llama_batch_get_one(tokens, n_prompt_tokens);
 
     if (llama_decode(g_llm_state->ctx, batch) != 0) {
@@ -375,78 +382,21 @@ int llm_parser_generate(const char *prompt, const char *context,
     return output_len;
 }
 
-#else /* NAGI_NO_LLM - Stub implementations */
-
-int llm_parser_init(const char *model_path, const llm_config_t *config)
+/* Common error setter used by both real and stub implementations */
+static void set_error(const char *fmt, ...)
 {
-    (void)model_path;
-    (void)config;
-
-    g_llm_state = (llm_state_t *)calloc(1, sizeof(llm_state_t));
-    if (!g_llm_state) return 0;
-
-    strncpy(g_llm_state->system_prompt, DEFAULT_SYSTEM_PROMPT,
-            sizeof(g_llm_state->system_prompt) - 1);
-    g_llm_state->initialized = 1;
-
-    printf("LLM Parser: Initialized (stub mode - no LLM support)\n");
-    return 1;
-}
-
-void llm_parser_shutdown(void)
-{
+    va_list args;
+    va_start(args, fmt);
     if (g_llm_state) {
-        free(g_llm_state);
-        g_llm_state = NULL;
-    }
-}
-
-int llm_parser_ready(void)
-{
-    return g_llm_state && g_llm_state->initialized;
-}
-
-int llm_parser_parse(const char *input, const char *context, llm_parse_result_t *result)
-{
-    (void)context;
-
-    memset(result, 0, sizeof(llm_parse_result_t));
-
-    /* Simple fallback parsing - just split on space */
-    char *space = strchr(input, ' ');
-    if (space) {
-        int verb_len = space - input;
-        if (verb_len > 63) verb_len = 63;
-        strncpy(result->verb_str, input, verb_len);
-        result->verb_str[verb_len] = '\0';
-
-        strncpy(result->noun_str, space + 1, 63);
-        result->noun_str[63] = '\0';
-
-        result->success = 1;
+        vsnprintf(g_llm_state->last_error, sizeof(g_llm_state->last_error), fmt, args);
     } else {
-        strncpy(result->verb_str, input, 63);
-        result->verb_str[63] = '\0';
-        result->success = 1;
+        /* Fallback: print to stderr */
+        char buf[256];
+        vsnprintf(buf, sizeof(buf), fmt, args);
+        fprintf(stderr, "LLM Parser Error: %s\n", buf);
     }
-
-    snprintf(result->canonical, sizeof(result->canonical), "%s %s",
-             result->verb_str, result->noun_str);
-
-    return result->success;
+    va_end(args);
 }
-
-int llm_parser_generate(const char *prompt, const char *context,
-                        char *output, int output_size)
-{
-    (void)prompt;
-    (void)context;
-    strncpy(output, "[LLM not available]", output_size - 1);
-    output[output_size - 1] = '\0';
-    return strlen(output);
-}
-
-#endif /* NAGI_NO_LLM */
 
 /* ========== Common functions (both LLM and stub) ========== */
 
@@ -712,4 +662,46 @@ int llm_parser_response_to_words(const char *response, int *word_ids, int max_wo
     }
 
     return count;
+}
+
+
+/*
+ * Helper: Check whether an input matches an expected AGI word list
+ * - input/context: player input and built game context
+ * - expected_word_ids: array of expected AGI word ids (values like 1 indicate ANY)
+ * - expected_count: number of entries in expected_word_ids
+ * - min_confidence: minimum confidence required (0.0 - 1.0)
+ * Returns 1 if match, 0 otherwise
+ */
+int llm_parser_matches_expected(const char *input, const char *context,
+                                const int *expected_word_ids, int expected_count,
+                                float min_confidence)
+{
+    if (!llm_parser_ready()) return 0;
+
+    llm_parse_result_t res;
+    if (!llm_parser_parse(input, context, &res) || !res.success) return 0;
+
+    if (res.confidence < min_confidence) return 0;
+
+    /* If LLM provided verb/noun ids, check against expected list */
+    for (int i = 0; i < expected_count; ++i) {
+        int want = expected_word_ids[i];
+        if (want == 1) return 1; /* wildcard ANY */
+        if (res.verb_id == want) return 1;
+        if (res.noun_id == want) return 1;
+    }
+
+    /* If ids not available, try mapping verb_str/noun_str to ids */
+    int vid = -1, nid = -1;
+    if (res.verb_str[0]) vid = llm_parser_find_word(res.verb_str, NULL);
+    if (res.noun_str[0]) nid = llm_parser_find_word(res.noun_str, NULL);
+    for (int i = 0; i < expected_count; ++i) {
+        int want = expected_word_ids[i];
+        if (want == 1) return 1;
+        if (vid >= 0 && vid == want) return 1;
+        if (nid >= 0 && nid == want) return 1;
+    }
+
+    return 0;
 }

@@ -110,6 +110,14 @@ int llm_parser_ready(void);
 int llm_parser_parse(const char *input, const char *context, llm_parse_result_t *result);
 
 /*
+ * Helper: Check whether an input matches an expected AGI word list
+ * Returns 1 if match (confidence >= min_confidence), 0 otherwise
+ */
+int llm_parser_matches_expected(const char *input, const char *context,
+                                const int *expected_word_ids, int expected_count,
+                                float min_confidence);
+
+/*
  * Generate a response/description using the LLM
  *
  * @param prompt: Prompt for generation
