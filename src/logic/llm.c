@@ -20,5 +20,6 @@ u8 *cmd_update_context(u8 *c)
 
 void process_context_update(const char *message)
 {
+	// TODO: send this message to the LLM context system
         printf("Processing context update with message: %s\n", message);
 }

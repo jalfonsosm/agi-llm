@@ -70,7 +70,7 @@ _RoomInit                        cseg     000012DE 00000015
 
 #include "log.h"
 
-#ifdef NAGI_HAS_LLM
+#ifdef NAGI_ENABLE_LLM
 #include "llm/llm_parser.h"
 #endif
 
@@ -192,7 +192,7 @@ void nagi_init()
 	// allocate memory for the LZW dictionary
 	lzw_init();
 
-	#ifdef NAGI_HAS_LLM
+	#ifdef NAGI_ENABLE_LLM
 	/* Initialize LLM if available. Prefer compile-time default model path,
 	   otherwise fall back to environment variable `NAGI_LLM_MODEL_PATH`. */
 	const char *llm_model_path = NULL;
@@ -347,7 +347,7 @@ void nagi_shutdown(void)
 	printf("nagi_shutdown: gfx_shutdown...\n"); fflush(stdout);
 	gfx_shutdown();
 
-#ifdef NAGI_HAS_LLM
+#ifdef NAGI_ENABLE_LLM
         /* Shutdown LLM cleanly */
         llm_parser_shutdown();
 #endif

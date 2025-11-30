@@ -5,9 +5,10 @@ set_target_properties(nagi PROPERTIES
     C_EXTENSIONS NO
 )
 
+option(NAGI_ENABLE_LLM "Enable LLM (llama.cpp) support" ON)
+
 # All include files references are relative to the source file (not ideal)
 # target_include_directories(nagi PRIVATE .)
-option(NAGI_ENABLE_LLM "Enable LLM (llama.cpp) support" ON)
 
 set(base_sources
     agi.c
@@ -333,17 +334,21 @@ if(NAGI_ENABLE_LLM)
         
     set(DEFAULT_MODEL_PATH "${CMAKE_BINARY_DIR}/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf")
     target_compile_definitions(nagi PRIVATE 
-        NAGI_HAS_LLM=1
+        NAGI_ENABLE_LLM=1
         NAGI_DEFAULT_LLM_MODEL_PATH="${DEFAULT_MODEL_PATH}"
     )
-    
-    add_custom_target(download_model
+
+    add_custom_command(
+        OUTPUT "${DEFAULT_MODEL_PATH}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/models"
-        COMMAND curl -L -o "${DEFAULT_MODEL_PATH}" 
+        COMMAND ${CMAKE_COMMAND} -E echo "Downloading TinyLlama model to ${DEFAULT_MODEL_PATH}..."
+        COMMAND curl -f -L --retry 3 -o "${DEFAULT_MODEL_PATH}"
             "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
         COMMENT "Downloading TinyLlama model..."
+        VERBATIM
     )
-    
+
+    add_custom_target(download_model DEPENDS "${DEFAULT_MODEL_PATH}")
     add_dependencies(nagi download_model)
     
     message(STATUS "LLM (llama.cpp) support enabled - static library")

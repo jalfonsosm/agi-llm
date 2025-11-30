@@ -42,7 +42,7 @@ llm_config_t g_llm_config = {
     .top_p = 0.9f,
     .top_k = 40,
     .max_tokens = 128,
-    .use_gpu = 0,
+    .use_gpu = 1,
     .verbose = 0
 };
 
@@ -234,13 +234,20 @@ int llm_parser_parse(const char *input, const char *context, llm_parse_result_t 
     /* Clear KV cache / memory */
     llama_memory_clear(llama_get_memory(g_llm_state->ctx), false);
 
-    /* Create batch and process prompt */
-    struct llama_batch batch = llama_batch_get_one(tokens, n_prompt_tokens);
+    /* Create batch and process prompt in chunks */
+    for (int i = 0; i < n_prompt_tokens; i += g_llm_config.batch_size) {
+        int n_eval = n_prompt_tokens - i;
+        if (n_eval > g_llm_config.batch_size) {
+            n_eval = g_llm_config.batch_size;
+        }
 
-    if (llama_decode(g_llm_state->ctx, batch) != 0) {
-        set_error("Failed to decode prompt");
-        free(tokens);
-        return 0;
+        struct llama_batch batch = llama_batch_get_one(tokens + i, n_eval);
+        
+        if (llama_decode(g_llm_state->ctx, batch) != 0) {
+            set_error("Failed to decode prompt chunk");
+            free(tokens);
+            return 0;
+        }
     }
 
     /* Generate response */
@@ -266,7 +273,7 @@ int llm_parser_parse(const char *input, const char *context, llm_parse_result_t 
         }
 
         /* Decode next token */
-        batch = llama_batch_get_one(&new_token, 1);
+        struct llama_batch batch = llama_batch_get_one(&new_token, 1);
         if (llama_decode(g_llm_state->ctx, batch) != 0) {
             break;
         }
@@ -346,32 +353,40 @@ int llm_parser_generate(const char *prompt, const char *context,
         return 0;
     }
 
-    /* Clear KV cache / memory and decode prompt */
+    /* Clear KV cache / memory and decode prompt in chunks */
     llama_memory_clear(llama_get_memory(g_llm_state->ctx), false);
-    struct llama_batch batch = llama_batch_get_one(tokens, n_prompt_tokens);
+    
+    for (int i = 0; i < n_prompt_tokens; i += g_llm_config.batch_size) {
+        int n_eval = n_prompt_tokens - i;
+        if (n_eval > g_llm_config.batch_size) {
+            n_eval = g_llm_config.batch_size;
+        }
 
-    if (llama_decode(g_llm_state->ctx, batch) != 0) {
-        free(tokens);
-        return 0;
+        struct llama_batch batch = llama_batch_get_one(tokens + i, n_eval);
+
+        if (llama_decode(g_llm_state->ctx, batch) != 0) {
+            free(tokens);
+            return 0;
+        }
     }
 
     /* Generate */
     for (int i = 0; i < g_llm_config.max_tokens && output_len < output_size - 1; i++) {
         llama_token new_token = llama_sampler_sample(g_llm_state->sampler, g_llm_state->ctx, -1);
 
-        if (llama_token_is_eog(g_llm_state->model, new_token)) {
+        if (llama_vocab_is_eog(llama_model_get_vocab(g_llm_state->model), new_token)) {
             break;
         }
 
         char piece[64];
-        int piece_len = llama_token_to_piece(g_llm_state->model, new_token,
+        int piece_len = llama_token_to_piece(llama_model_get_vocab(g_llm_state->model), new_token,
                                               piece, sizeof(piece), 0, true);
         if (piece_len > 0 && output_len + piece_len < output_size - 1) {
             memcpy(output + output_len, piece, piece_len);
             output_len += piece_len;
         }
 
-        batch = llama_batch_get_one(&new_token, 1);
+        struct llama_batch batch = llama_batch_get_one(&new_token, 1);
         if (llama_decode(g_llm_state->ctx, batch) != 0) {
             break;
         }
