@@ -25,7 +25,7 @@ extern "C" {
 #define LLM_MAX_MODEL_PATH 512
 #define LLM_MAX_PROMPT_SIZE 4096
 #define LLM_MAX_RESPONSE_SIZE 1024
-#define LLM_DEFAULT_CONTEXT_SIZE 2048
+#define LLM_DEFAULT_CONTEXT_SIZE 4096
 #define LLM_DEFAULT_BATCH_SIZE 512
 #define LLM_DEFAULT_THREADS 4
 
@@ -100,16 +100,6 @@ void llm_parser_shutdown(void);
 int llm_parser_ready(void);
 
 /*
- * Parse player input using the LLM
- *
- * @param input: Player's natural language input
- * @param context: Game context (from llm_context_build())
- * @param result: Output parse result
- * @return: 1 on success, 0 on failure
- */
-int llm_parser_parse(const char *input, const char *context, llm_parse_result_t *result);
-
-/*
  * Helper: Check whether an input matches an expected AGI word list
  * Returns 1 if match (confidence >= min_confidence), 0 otherwise
  */
@@ -126,59 +116,15 @@ int llm_parser_matches_expected(const char *input, const char *context,
  * @param output_size: Size of output buffer
  * @return: Number of characters generated
  */
-int llm_parser_generate(const char *prompt, const char *context,
-                        char *output, int output_size);
-
-/*
- * Load vocabulary from AGI words.tok file
- *
- * @param words_data: Pointer to words.tok data
- * @param data_size: Size of data
- * @return: Number of words loaded
- */
-int llm_parser_load_vocab(const u8 *words_data, int data_size);
-
-/*
- * Load vocabulary from a text file
- * Format: word_id|word|synonyms|is_verb
- *
- * @param filename: Path to vocabulary file
- * @return: Number of words loaded
- */
-int llm_parser_load_vocab_file(const char *filename);
-
-/*
- * Add a vocabulary entry manually
- *
- * @param word_id: AGI word ID
- * @param word: Word string
- * @param synonyms: Comma-separated synonyms (can be NULL)
- * @param is_verb: 1 if verb, 0 if noun
- */
-void llm_parser_add_vocab(int word_id, const char *word, const char *synonyms, int is_verb);
-
-/*
- * Find word ID by string (case-insensitive)
- *
- * @param word: Word to find
- * @param is_verb: Output: 1 if verb, 0 if noun
- * @return: Word ID or -1 if not found
- */
-int llm_parser_find_word(const char *word, int *is_verb);
-
-/*
- * Set the system prompt for the LLM
- *
- * @param prompt: System prompt text
- */
-void llm_parser_set_system_prompt(const char *prompt);
+// int llm_parser_generate(const char *prompt, const char *context,
+//                         char *output, int output_size);
 
 /*
  * Set game-specific prompt additions
  *
  * @param game_info: Game-specific information for the prompt
  */
-void llm_parser_set_game_info(const char *game_info);
+// void llm_parser_set_game_info(const char *game_info);
 
 /*
  * Configure LLM parameters at runtime
@@ -186,33 +132,7 @@ void llm_parser_set_game_info(const char *game_info);
  * @param param: Parameter name
  * @param value: Parameter value (as string)
  */
-void llm_parser_set_param(const char *param, const char *value);
-
-/*
- * Get the last error message
- */
-const char *llm_parser_get_error(void);
-
-/*
- * Debug: Print vocabulary
- */
-void llm_parser_print_vocab(void);
-
-/*
- * Debug: Print LLM stats
- */
-void llm_parser_print_stats(void);
-
-/*
- * Helper: Parse AGI "said" word list from LLM response
- * Converts a response like "look,door" to word IDs
- *
- * @param response: LLM response string
- * @param word_ids: Output array of word IDs
- * @param max_words: Maximum words to parse
- * @return: Number of words parsed
- */
-int llm_parser_response_to_words(const char *response, int *word_ids, int max_words);
+// void llm_parser_set_param(const char *param, const char *value);
 
 #ifdef __cplusplus
 }

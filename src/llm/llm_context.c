@@ -631,3 +631,17 @@ const char *llm_context_get_last_player_input(void)
     }
     return NULL;
 }
+
+/* Clear the last stored player input */
+void llm_context_clear_last_player_input(void);
+{
+    if (g_llm_context.history_count == 0) return;
+
+    for (int i = g_llm_context.history_count - 1; i >= 0; --i) {
+        int idx = (g_llm_context.history_head + i) % LLM_MAX_HISTORY_ENTRIES;
+        if (g_llm_context.history[idx].type == CTX_PLAYER_INPUT) {
+            g_llm_context.history[idx].text[0] = '\0';
+            return;
+        }
+    }
+}

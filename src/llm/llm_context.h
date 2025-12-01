@@ -214,6 +214,9 @@ void llm_context_on_player_input(const char *input);
 /* Get the most recent raw player input text (internal buffer pointer, do not free) */
 const char *llm_context_get_last_player_input(void);
 
+/* Clear the last stored player input */
+void llm_context_clear_last_player_input(void);
+
 /*
  * Serialize context to JSON for external LLM APIs
  *

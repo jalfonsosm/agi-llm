@@ -249,6 +249,7 @@ u8 cmd_said()
 		/* Attempt LLM fallback: reconstruct expected word IDs and ask LLM if last input matches */
 		/* LLM fallback: reconstruct expected list and query helper */
 		if (llm_parser_ready()) {
+			//TODO: should we keep only valid inputs in the history instead of store all and remove the valid entries?
 			const char *last_input = llm_context_get_last_player_input();
 			if (last_input) {
 				int expected[64];
@@ -261,6 +262,7 @@ u8 cmd_said()
 				}
 
 				if (llm_parser_matches_expected(last_input, llm_context_build(), expected, ecount, 0.5f)) {
+					llm_context_clear_last_player_input();
 					flag_set(F04_SAIDACCEPT);
 					return 1;
 				}
