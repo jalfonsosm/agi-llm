@@ -47,6 +47,11 @@ _DispNewLine                     cseg     0000234E 0000001F
 #include <setjmp.h>
 #include "../sys/error.h"
 
+#ifdef NAGI_ENABLE_LLM
+#include "../llm/llm_parser.h"
+#include "../llm/llm_context.h"
+#endif
+
 static u8 *print_at(u16 msg_num, u8 *c);
 static char *r_display1f93(const char *given_source, char *given_msg);
 static const char *str_to_int_ptr(const char *s, u16 *num);
@@ -148,17 +153,52 @@ int message_box(const char *var8)
 {
 	u32 temp;
 	int ret;
-	
-	message_box_draw(var8, 0, 0, 0);
-	
-	if ( flag_test(F15_PRINTMODE) ) 
+	const char *display_msg = var8;
+
+#ifdef NAGI_ENABLE_LLM
+	/* Cache translated messages to avoid recalculating on every tick */
+	static char last_original[600] = {0};
+	static char translated_msg[600] = {0};
+	static int translation_cached = 0;
+
+	/* Check if this is a new message or the same one being redrawn */
+	if (llm_parser_ready() && var8 && var8[0] != '\0') {
+		/* If message changed, translate it */
+		if (!translation_cached || strcmp(var8, last_original) != 0) {
+			const char *user_input = llm_context_get_last_player_input();
+
+			/* Only translate if we have user input (not menu/system messages) */
+			if (user_input && user_input[0] != '\0') {
+				int len = llm_parser_generate_response(var8, user_input,
+				                                        translated_msg, sizeof(translated_msg));
+				if (len > 0) {
+					/* Cache successful translation */
+					strncpy(last_original, var8, sizeof(last_original) - 1);
+					last_original[sizeof(last_original) - 1] = '\0';
+					translation_cached = 1;
+					display_msg = translated_msg;
+				} else {
+					/* Translation failed, use original */
+					display_msg = var8;
+				}
+			}
+		} else {
+			/* Same message, use cached translation */
+			display_msg = translated_msg;
+		}
+	}
+#endif
+
+	message_box_draw(display_msg, 0, 0, 0);
+
+	if ( flag_test(F15_PRINTMODE) )
 	{
 		flag_reset(F15_PRINTMODE);
 		return 1;
 	}
 	else
 	{
-		if ( state.var[V21_WINDOWTIMER] == 0) 
+		if ( state.var[V21_WINDOWTIMER] == 0)
 		{
 			ret = (user_bolean_poll() == 1);
 			// 1==enter 0==esc
@@ -171,8 +211,16 @@ int message_box(const char *var8)
 			ret = 1;
 			state.var[V21_WINDOWTIMER] = 0;
 		}
-		
+
 		cmd_close_window(0);
+
+#ifdef NAGI_ENABLE_LLM
+		/* Clear cache when message box closes */
+		translation_cached = 0;
+		last_original[0] = '\0';
+		translated_msg[0] = '\0';
+#endif
+
 		return ret;
 	}
 }

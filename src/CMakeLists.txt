@@ -262,6 +262,9 @@ if(NAGI_ENABLE_LLM)
         -DLLAMA_AVX512=OFF
         -DLLAMA_FMA=OFF
         -DLLAMA_F16C=OFF
+        -DLLAMA_METAL=ON
+        -DLLAMA_ACCELERATE=ON
+        -DLLAMA_FLASH_ATTN=ON
     )
 
     if(APPLE)
@@ -283,6 +286,11 @@ if(NAGI_ENABLE_LLM)
             -DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}
             -DCMAKE_OSX_ARCHITECTURES=arm64
         )
+    # else()
+    #     list(APPEND LLAMA_CMAKE_FLAGS
+    #         -DGGML_CUDA=ON
+    #         -DLLAMA_CUBLAS=ON
+    #     )
     endif()
 
     ExternalProject_Add(llama_cpp
@@ -332,7 +340,7 @@ if(NAGI_ENABLE_LLM)
         target_link_libraries(nagi PRIVATE "-framework Metal" "-framework MetalPerformanceShaders")
     endif()
         
-    set(DEFAULT_MODEL_PATH "${CMAKE_BINARY_DIR}/models/Phi-3-mini-4k-instruct-q4.gguf")
+    set(DEFAULT_MODEL_PATH "${CMAKE_BINARY_DIR}/models/llm_model.gguf")
     target_compile_definitions(nagi PRIVATE
         NAGI_ENABLE_LLM=1
         NAGI_DEFAULT_LLM_MODEL_PATH="${DEFAULT_MODEL_PATH}"
@@ -341,10 +349,13 @@ if(NAGI_ENABLE_LLM)
     add_custom_command(
         OUTPUT "${DEFAULT_MODEL_PATH}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/models"
-        COMMAND ${CMAKE_COMMAND} -E echo "Downloading Phi-3-mini model to ${DEFAULT_MODEL_PATH}..."
+        COMMAND ${CMAKE_COMMAND} -E echo "Downloading LLM model to ${DEFAULT_MODEL_PATH}..."
         COMMAND curl -f -L --retry 3 -o "${DEFAULT_MODEL_PATH}"
-            "https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf"
-        COMMENT "Downloading Phi-3-mini-4k-instruct (Q4, 2.3GB) model..."
+            # "https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf"
+            "https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF/resolve/main/Phi-3-mini-4k-instruct-Q4_K_M.gguf"
+            # "https://huggingface.co/itlwas/Vikhr-Gemma-2B-instruct-Q4_K_M-GGUF/resolve/main/vikhr-gemma-2b-instruct-q4_k_m.gguf"
+            # "https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF/blob/main/Phi-3-mini-4k-instruct-Q3_K_L.gguf"
+            COMMENT "Downloading LLM model..."
         VERBATIM
     )
 

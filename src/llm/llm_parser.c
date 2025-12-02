@@ -22,6 +22,52 @@
 #include "../ui/parse.h"
 #include "../sys/endian.h"
 
+/* Prompt template for EXTRACTION mode - will be filled with game vocabulary */
+static const char *EXTRACTION_PROMPT_TEMPLATE =
+    "<|user|>\n"
+    "Translate to English using these verbs: %s\n"
+    "Input: mira el castillo<|end|>\n"
+    "<|assistant|>\n"
+    "look castle<|end|>\n"
+    "<|user|>\n"
+    "Translate to English using these verbs: %s\n"
+    "Input: coge la llave<|end|>\n"
+    "<|assistant|>\n"
+    "get key<|end|>\n"
+    "<|user|>\n"
+    "Translate to English using these verbs: %s\n"
+    "Input: %s<|end|>\n"
+    "<|assistant|>\n";
+
+/* Fallback prompt when dictionary not available */
+static const char *EXTRACTION_PROMPT_SIMPLE =
+    "<|user|>\n"
+    "Translate to English (verb noun only):\n"
+    "mira el castillo<|end|>\n"
+    "<|assistant|>\n"
+    "look castle<|end|>\n"
+    "<|user|>\n"
+    "Translate to English (verb noun only):\n"
+    "coge la llave<|end|>\n"
+    "<|assistant|>\n"
+    "get key<|end|>\n"
+    "<|user|>\n"
+    "Translate to English (verb noun only):\n"
+    "%s<|end|>\n"
+    "<|assistant|>\n";
+
+/* Prompt for response generation - translates game response to user's language */
+static const char *RESPONSE_GENERATION_PROMPT =
+    "<|user|>\n"
+    "You are a text adventure game narrator. Translate the game response to the same language "
+    "the player used in their input. Keep it concise and in the style of classic adventure games.\n\n"
+    "Player input: %s\n"
+    "Game response: %s\n"
+    "%s"  /* Optional context */
+    "Translate the game response to the player's language:<|end|>\n"
+    "<|assistant|>\n";
+
+/* Prompt for SEMANTIC mode - matches input meaning with expected command */
 static const char *SEMANTIC_MATCHING_PROMPT =
     "<|system|>\n"
     "You are a command matcher for a text adventure game. Your job is to determine if a user's input "
@@ -83,10 +129,6 @@ struct llm_state {
     int initialized;
     char last_error[256];
 
-    /* KV Cache Management */
-    llama_token *tokens_prev;
-    int n_tokens_prev;
-
     /* Sequence counter for rotating through sequences */
     int seq_counter;
 };
@@ -101,9 +143,10 @@ llm_config_t g_llm_config = {
     .temperature = 0.0f,  // Greedy decoding for deterministic matching
     .top_p = 0.9f,
     .top_k = 1,   // Only consider top token
-    .max_tokens = 5,  // Only need "yes" or "no"
+    .max_tokens = 5,  // Only need "yes" or "no" for semantic, or "verb noun" for extraction
     .use_gpu = 1,
-    .verbose = 1 //0
+    .verbose = 0,
+    .mode = LLM_MODE_EXTRACTION // LLM_MODE_SEMANTIC  // Default to extraction mode (faster)
 };
 
 /* Common error setter */
@@ -152,7 +195,15 @@ int llm_parser_init(const char *model_path, const llm_config_t *config)
 
     /* Load model */
     model_params = llama_model_default_params();
-    model_params.n_gpu_layers = g_llm_config.use_gpu ? 99 : 0;
+    if (g_llm_config.use_gpu) {
+        model_params.n_gpu_layers = 999;
+        model_params.main_gpu = 0;
+    } else {
+        model_params.n_gpu_layers = 0;
+    }
+
+    model_params.use_mmap = true;
+    model_params.use_mlock = false;
 
     printf("LLM Parser: Loading model from %s...\n", g_llm_config.model_path);
     g_llm_state->model = llama_model_load_from_file(g_llm_config.model_path, model_params);
@@ -194,10 +245,6 @@ int llm_parser_init(const char *model_path, const llm_config_t *config)
     llama_sampler_chain_add(g_llm_state->sampler,
         llama_sampler_init_dist(42));
 
-    /* Allocate KV cache tracking buffer */
-    g_llm_state->tokens_prev = (llama_token *)malloc(g_llm_config.context_size * sizeof(llama_token));
-    g_llm_state->n_tokens_prev = 0;
-
     /* Initialize sequence counter */
     g_llm_state->seq_counter = 0;
 
@@ -229,7 +276,6 @@ void llm_parser_shutdown(void)
 
     llama_backend_free();
 
-    free(g_llm_state->tokens_prev);
     free(g_llm_state);
     g_llm_state = NULL;
 
@@ -360,13 +406,252 @@ static const char *get_word_string(int word_id)
 }
 
 /*
+ * Extract common verbs from the game dictionary
+ * Returns a static buffer with comma-separated verb list (e.g., "look, get, open, close")
+ * Extracts first 40-50 words which are typically verbs in AGI games
+ */
+static const char *extract_game_verbs(void)
+{
+    static char verb_list[512];
+    static int verbs_extracted = 0;
+
+    /* Only extract once */
+    if (verbs_extracted) {
+        return verb_list;
+    }
+
+    /* Verify that words.tok data is loaded */
+    if (!words_tok_data) {
+        fprintf(stderr, "LLM Parser: words_tok_data not loaded, cannot extract verbs\n");
+        return NULL;
+    }
+
+    verb_list[0] = '\0';
+    int verb_count = 0;
+    int max_verbs = 50;  /* First ~50 words are usually verbs in AGI */
+
+    /* Iterate through all 26 letter offsets (A-Z) */
+    for (int i = 0; i < 26 && verb_count < max_verbs; i++) {
+        u16 offset = load_be_16(words_tok_data + i * 2);
+        if (offset == 0) continue;
+
+        u8 *ptr = words_tok_data + offset;
+        char buffer[64];
+        buffer[0] = '\0';
+
+        int words_in_section = 0;
+        while (verb_count < max_verbs) {
+            u8 prefix_count = *ptr;
+
+            /* End of section */
+            if (words_in_section > 0 && prefix_count == 0) {
+                break;
+            }
+
+            ptr++;
+            words_in_section++;
+            int len = prefix_count;
+
+            /* Decode characters */
+            while (1) {
+                u8 byte = *ptr;
+                char decoded_char = (byte & 0x7F) ^ 0x7F;
+
+                if (len < (int)sizeof(buffer) - 1) {
+                    buffer[len++] = decoded_char;
+                }
+
+                if (byte & 0x80) {
+                    ptr++;
+                    break;
+                }
+                ptr++;
+            }
+
+            buffer[len] = '\0';
+
+            /* Read word ID and skip it */
+            ptr += 2;
+
+            /* Add to verb list if there's space */
+            if (strlen(buffer) > 0) {
+                if (verb_list[0] != '\0') {
+                    strncat(verb_list, ", ", sizeof(verb_list) - strlen(verb_list) - 1);
+                }
+                strncat(verb_list, buffer, sizeof(verb_list) - strlen(verb_list) - 1);
+                verb_count++;
+            }
+        }
+    }
+
+    verbs_extracted = 1;
+
+    if (g_llm_config.verbose) {
+        printf("LLM Parser: Extracted %d verbs from dictionary: %s\n", verb_count, verb_list);
+    }
+
+    return verb_list;
+}
+
+/*
+ * Extract verb and noun from user input (EXTRACTION mode)
+ * Translates "mira el castillo" -> "look castle"
+ * Much faster than semantic matching, uses shorter prompt
+ * Returns static buffer with extracted English words
+ */
+const char *llm_parser_extract_words(const char *input)
+{
+    static char response_buf[256];
+    char prompt[LLM_MAX_PROMPT_SIZE];
+    int n_tokens, n_prompt_tokens;
+    llama_token *tokens;
+
+    if (!llm_parser_ready()) return input;
+    if (!input || input[0] == '\0') return input;
+
+    /* Extract game verbs for vocabulary hint */
+    const char *verbs = extract_game_verbs();
+
+    /* Build extraction prompt with vocabulary context */
+    if (verbs && verbs[0] != '\0') {
+        /* Use template with verb vocabulary */
+        snprintf(prompt, sizeof(prompt), EXTRACTION_PROMPT_TEMPLATE,
+                 verbs, verbs, verbs, input);
+    } else {
+        /* Fallback to simple prompt */
+        snprintf(prompt, sizeof(prompt), EXTRACTION_PROMPT_SIMPLE, input);
+    }
+
+    /* Use rotating sequence IDs to avoid KV cache conflicts */
+    int current_seq = (g_llm_state->seq_counter++) % 8;
+
+    if (g_llm_config.verbose) {
+        printf("\n=== LLM Extraction ===\n");
+        printf("Input: \"%s\"\n", input);
+        printf("Using sequence ID: %d\n", current_seq);
+    }
+
+    /* Clear KV cache for this sequence */
+    llama_memory_t mem = llama_get_memory(g_llm_state->ctx);
+    llama_memory_seq_rm(mem, current_seq, -1, -1);
+
+    /* Tokenize prompt */
+    n_tokens = llama_n_ctx(g_llm_state->ctx);
+    tokens = (llama_token *)malloc(n_tokens * sizeof(llama_token));
+    n_prompt_tokens = llama_tokenize(llama_model_get_vocab(g_llm_state->model),
+                                     prompt, (int)strlen(prompt),
+                                     tokens, n_tokens, true, true);
+    if (n_prompt_tokens < 0) {
+        free(tokens);
+        return input;
+    }
+
+    /* Process prompt in batches */
+    struct llama_batch batch = llama_batch_init(g_llm_config.batch_size, 0, 8);
+    for (int i = 0; i < n_prompt_tokens; i += g_llm_config.batch_size) {
+        int n_eval = n_prompt_tokens - i;
+        if (n_eval > g_llm_config.batch_size) n_eval = g_llm_config.batch_size;
+
+        batch.n_tokens = n_eval;
+        for (int k = 0; k < n_eval; k++) {
+            batch.token[k] = tokens[i + k];
+            batch.pos[k] = i + k;
+            batch.n_seq_id[k] = 1;
+            batch.seq_id[k][0] = current_seq;
+            batch.logits[k] = false;
+        }
+        if (i + n_eval == n_prompt_tokens) {
+            batch.logits[n_eval - 1] = true;
+        }
+
+        if (llama_decode(g_llm_state->ctx, batch) != 0) {
+            llama_batch_free(batch);
+            free(tokens);
+            return input;
+        }
+    }
+    llama_batch_free(batch);
+    free(tokens);
+
+    /* Generate response (extract English words) */
+    int response_len = 0;
+    struct llama_batch batch_gen = llama_batch_init(1, 0, 8);
+    int gen_count = 0;
+    int max_extract_tokens = 10;  // Short limit - we only need "verb noun"
+
+    while (response_len < (int)sizeof(response_buf) - 1 && gen_count < max_extract_tokens) {
+        llama_token new_token = llama_sampler_sample(g_llm_state->sampler, g_llm_state->ctx, -1);
+        llama_sampler_accept(g_llm_state->sampler, new_token);
+
+        if (llama_vocab_is_eog(llama_model_get_vocab(g_llm_state->model), new_token)) {
+            break;
+        }
+
+        char piece[64];
+        int piece_len = llama_token_to_piece(llama_model_get_vocab(g_llm_state->model),
+                                             new_token, piece, sizeof(piece), 0, true);
+        if (piece_len > 0 && response_len + piece_len < (int)sizeof(response_buf) - 1) {
+            memcpy(response_buf + response_len, piece, piece_len);
+            response_len += piece_len;
+
+            /* Stop if we hit a newline - extraction should be one line only */
+            if (strchr(piece, '\n') != NULL) {
+                break;
+            }
+        }
+
+        batch_gen.n_tokens = 1;
+        batch_gen.token[0] = new_token;
+        batch_gen.pos[0] = n_prompt_tokens + gen_count;
+        batch_gen.n_seq_id[0] = 1;
+        batch_gen.seq_id[0][0] = current_seq;
+        batch_gen.logits[0] = true;
+
+        if (llama_decode(g_llm_state->ctx, batch_gen) != 0) {
+            break;
+        }
+        gen_count++;
+    }
+
+    llama_batch_free(batch_gen);
+    response_buf[response_len] = '\0';
+
+    /* Normalize: trim whitespace and lowercase */
+    char *trimmed = response_buf;
+    while (*trimmed == ' ' || *trimmed == '\n' || *trimmed == '\r' || *trimmed == '\t') {
+        trimmed++;
+    }
+    char *end = trimmed + strlen(trimmed) - 1;
+    while (end > trimmed && (*end == ' ' || *end == '\n' || *end == '\r' || *end == '\t')) {
+        *end-- = '\0';
+    }
+
+    /* Convert to lowercase */
+    for (int i = 0; trimmed[i]; i++) {
+        trimmed[i] = tolower((unsigned char)trimmed[i]);
+    }
+
+    if (g_llm_config.verbose) {
+        printf("Extracted: \"%s\"\n", trimmed);
+        printf("===================\n\n");
+    }
+
+    /* Copy trimmed result back to start of buffer */
+    if (trimmed != response_buf) {
+        memmove(response_buf, trimmed, strlen(trimmed) + 1);
+    }
+
+    return response_buf;
+}
+
+/*
  * Helper: Check whether an input matches an expected AGI word list
  * Uses semantic matching: asks LLM "does input match command?"
  * Returns 1 if match, 0 otherwise
  */
-int llm_parser_matches_expected(const char *input, const char *context,
-                                const int *expected_word_ids, int expected_count,
-                                float min_confidence)
+int llm_parser_matches_expected(const char *input,
+                                const int *expected_word_ids,
+                                int expected_count)
 {
     char prompt[LLM_MAX_PROMPT_SIZE];
     char expected_command[256];
@@ -551,4 +836,146 @@ int llm_parser_matches_expected(const char *input, const char *context,
         printf("Result: NO MATCH (unclear response)\n===================\n\n");
     }
     return 0;
+}
+
+/*
+ * Generate a game response using the LLM
+ * Translates game response to player's language and optionally adds context
+ */
+int llm_parser_generate_response(const char *game_response, const char *user_input,
+                                  char *output, int output_size)
+{
+    char prompt[LLM_MAX_PROMPT_SIZE];
+    char context_str[512];
+    int n_tokens, n_prompt_tokens;
+    llama_token *tokens;
+
+    if (!llm_parser_ready()) return 0;
+    if (!game_response || !user_input || !output || output_size <= 0) return 0;
+
+    /* Get context if available */
+    context_str[0] = '\0';
+    #ifdef NAGI_ENABLE_LLM
+    const char *context = llm_context_build();
+    if (context && context[0] != '\0') {
+        snprintf(context_str, sizeof(context_str), "Game context: %s\n", context);
+    }
+    #endif
+
+    /* Build generation prompt */
+    snprintf(prompt, sizeof(prompt), RESPONSE_GENERATION_PROMPT,
+             user_input, game_response, context_str);
+
+    /* Use rotating sequence IDs */
+    int current_seq = (g_llm_state->seq_counter++) % 8;
+
+    if (g_llm_config.verbose) {
+        printf("\n=== LLM Response Generation ===\n");
+        printf("User input: \"%s\"\n", user_input);
+        printf("Game response: \"%s\"\n", game_response);
+        printf("Using sequence ID: %d\n", current_seq);
+    }
+
+    /* Clear KV cache for this sequence */
+    llama_memory_t mem = llama_get_memory(g_llm_state->ctx);
+    llama_memory_seq_rm(mem, current_seq, -1, -1);
+
+    /* Tokenize prompt */
+    n_tokens = llama_n_ctx(g_llm_state->ctx);
+    tokens = (llama_token *)malloc(n_tokens * sizeof(llama_token));
+    n_prompt_tokens = llama_tokenize(llama_model_get_vocab(g_llm_state->model),
+                                     prompt, (int)strlen(prompt),
+                                     tokens, n_tokens, true, true);
+    if (n_prompt_tokens < 0) {
+        free(tokens);
+        return 0;
+    }
+
+    /* Process prompt in batches */
+    struct llama_batch batch = llama_batch_init(g_llm_config.batch_size, 0, 8);
+    for (int i = 0; i < n_prompt_tokens; i += g_llm_config.batch_size) {
+        int n_eval = n_prompt_tokens - i;
+        if (n_eval > g_llm_config.batch_size) n_eval = g_llm_config.batch_size;
+
+        batch.n_tokens = n_eval;
+        for (int k = 0; k < n_eval; k++) {
+            batch.token[k] = tokens[i + k];
+            batch.pos[k] = i + k;
+            batch.n_seq_id[k] = 1;
+            batch.seq_id[k][0] = current_seq;
+            batch.logits[k] = false;
+        }
+        if (i + n_eval == n_prompt_tokens) {
+            batch.logits[n_eval - 1] = true;
+        }
+
+        if (llama_decode(g_llm_state->ctx, batch) != 0) {
+            llama_batch_free(batch);
+            free(tokens);
+            return 0;
+        }
+    }
+    llama_batch_free(batch);
+    free(tokens);
+
+    /* Generate response */
+    int response_len = 0;
+    struct llama_batch batch_gen = llama_batch_init(1, 0, 8);
+    int gen_count = 0;
+    int max_response_tokens = 150;  /* Limit for adventure game responses */
+
+    while (response_len < output_size - 1 && gen_count < max_response_tokens) {
+        llama_token new_token = llama_sampler_sample(g_llm_state->sampler, g_llm_state->ctx, -1);
+        llama_sampler_accept(g_llm_state->sampler, new_token);
+
+        if (llama_vocab_is_eog(llama_model_get_vocab(g_llm_state->model), new_token)) {
+            break;
+        }
+
+        char piece[64];
+        int piece_len = llama_token_to_piece(llama_model_get_vocab(g_llm_state->model),
+                                             new_token, piece, sizeof(piece), 0, true);
+        if (piece_len > 0 && response_len + piece_len < output_size - 1) {
+            memcpy(output + response_len, piece, piece_len);
+            response_len += piece_len;
+        }
+
+        batch_gen.n_tokens = 1;
+        batch_gen.token[0] = new_token;
+        batch_gen.pos[0] = n_prompt_tokens + gen_count;
+        batch_gen.n_seq_id[0] = 1;
+        batch_gen.seq_id[0][0] = current_seq;
+        batch_gen.logits[0] = true;
+
+        if (llama_decode(g_llm_state->ctx, batch_gen) != 0) {
+            break;
+        }
+        gen_count++;
+    }
+
+    llama_batch_free(batch_gen);
+    output[response_len] = '\0';
+
+    /* Trim whitespace */
+    char *trimmed = output;
+    while (*trimmed == ' ' || *trimmed == '\n' || *trimmed == '\r' || *trimmed == '\t') {
+        trimmed++;
+    }
+    char *end = trimmed + strlen(trimmed) - 1;
+    while (end > trimmed && (*end == ' ' || *end == '\n' || *end == '\r' || *end == '\t')) {
+        *end-- = '\0';
+    }
+
+    /* Move trimmed result to start of output buffer */
+    if (trimmed != output) {
+        memmove(output, trimmed, strlen(trimmed) + 1);
+        response_len = strlen(output);
+    }
+
+    if (g_llm_config.verbose) {
+        printf("Generated response: \"%s\"\n", output);
+        printf("===============================\n\n");
+    }
+
+    return response_len;
 }

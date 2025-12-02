@@ -246,30 +246,35 @@ u8 cmd_said()
 	else
 	{
 		#ifdef NAGI_ENABLE_LLM
-		/* Attempt LLM fallback: reconstruct expected word IDs and ask LLM if last input matches */
-		/* LLM fallback: reconstruct expected list and query helper */
-		/* Only try LLM if no other command has been accepted yet */
-		if (llm_parser_ready() && flag_test(F04_SAIDACCEPT) == 0) {
-			//TODO: should we keep only valid inputs in the history instead of store all and remove the valid entries?
-			const char *last_input = llm_context_get_last_player_input();
-			if (last_input && last_input[0] != '\0') {
-				int expected[64];
-				int ecount = 0;
-				u8 *ptr = said_list_start + 1; /* skip count byte */
-				for (int i = 0; i < orig_word_count && ecount < 64; ++i) {
-					u16 w = load_le_16(ptr);
-					ptr += 2;
-					expected[ecount++] = w;
-				}
+		/* LLM fallback depends on configured mode:
+		 * - EXTRACTION mode: Words already extracted and reparsed in cmd_parse(), just fail here
+		 * - SEMANTIC mode: Use semantic matching to compare input with expected command
+		 * - DISABLED mode: No LLM, just fail
+		 */
+		if (llm_parser_ready() && flag_test(F04_SAIDACCEPT) == 0 && g_llm_config.mode == LLM_MODE_SEMANTIC) {
+			/* SEMANTIC MODE: Compare user input meaning with expected command */
+			/* Only try if we have unknown words */
+			if (state.var[V09_BADWORD] > 0) {
+				const char *last_input = llm_context_get_last_player_input();
+				if (last_input && last_input[0] != '\0') {
+					int expected[64];
+					int ecount = 0;
+					u8 *ptr = said_list_start + 1; /* skip count byte */
+					for (int i = 0; i < orig_word_count && ecount < 64; ++i) {
+						u16 w = load_le_16(ptr);
+						ptr += 2;
+						expected[ecount++] = w;
+					}
 
-				if (llm_parser_matches_expected(last_input, llm_context_build(), expected, ecount, 0.5f)) {
-					flag_set(F04_SAIDACCEPT);
-					logic_data += word_remaining << 1;
-					return 1;
+					if (llm_parser_matches_expected(last_input, expected, ecount)) {
+						flag_set(F04_SAIDACCEPT);
+						logic_data += word_remaining << 1;
+						return 1;
+					}
 				}
 			}
 		}
-		/* No LLM match: advance logic_data as before and fail */
+		/* No LLM match or EXTRACTION mode: advance logic_data and fail */
 		#endif
 
 		logic_data += word_remaining << 1;

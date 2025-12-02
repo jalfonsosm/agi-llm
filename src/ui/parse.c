@@ -33,6 +33,7 @@ _WordNext                        cseg     00001BE4 00000020
 
 #ifdef NAGI_ENABLE_LLM
 #include "../llm/llm_context.h"
+#include "../llm/llm_parser.h"
 #endif
 
 void parse(const char *string);
@@ -94,6 +95,52 @@ void parse(const char *string)
 		}
 		// if WORD_IGNORE then skip it
 	}
+
+	#ifdef NAGI_ENABLE_LLM
+	/*
+	 * EXTRACTION MODE: If parsing failed (unknown words) or found no words,
+	 * extract verb+noun in English using LLM and re-parse.
+	 * This is faster than semantic matching: O(1) extraction vs O(N) comparisons.
+	 */
+	if (llm_parser_ready() && g_llm_config.mode == LLM_MODE_EXTRACTION &&
+	    (word_total == 0 || state.var[V09_BADWORD] > 0)) {
+		const char *extracted = llm_parser_extract_words(string);
+
+		/* Only re-parse if extraction is different from original input */
+		if (extracted && strcmp(extracted, string) != 0) {
+			/* Reset parser state */
+			memset(word_string, 0, sizeof(word_string));
+			memset(word_num, 0, sizeof(word_num));
+			state.var[V09_BADWORD] = 0;
+			word_total = 0;
+
+			/* Re-run parsing on extracted English words */
+			parse_read(extracted);
+			strPtr = parse_string;
+
+			while ((*strPtr != 0) && (word_total < WORD_BUF_SIZE))
+			{
+				wordString = strPtr;
+				wordNumber = word_find();
+
+				if (wordNumber == 0xFFFF)	// bad
+				{
+					word_string[word_total] = strPtr;
+					state.var[V09_BADWORD] = word_total + 1;
+					word_total++;
+					break;
+				}
+
+				if (wordNumber != WORD_IGNORE)	// good
+				{
+					word_num[word_total] = wordNumber;
+					word_string[word_total] = wordString;
+					word_total++;
+				}
+			}
+		}
+	}
+	#endif
 	
 	if (word_total > 0)
 		flag_set(F02_PLAYERCMD);

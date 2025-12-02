@@ -31,6 +31,15 @@ extern "C" {
 #define LLM_DEFAULT_THREADS 4
 
 /*
+ * LLM operation modes
+ */
+typedef enum {
+    LLM_MODE_DISABLED = 0,   /* LLM disabled, use original parser only */
+    LLM_MODE_EXTRACTION = 1, /* Extract verb+noun in English, use original said() matching (FAST) */
+    LLM_MODE_SEMANTIC = 2    /* Semantic matching: compare input meaning with expected command (SLOW, PRECISE) */
+} llm_mode_t;
+
+/*
  * LLM configuration structure
  */
 typedef struct {
@@ -45,6 +54,7 @@ typedef struct {
     int max_tokens;
     int use_gpu;           /* 1 to use GPU acceleration */
     int verbose;           /* 1 for verbose output */
+    llm_mode_t mode;       /* LLM operation mode */
 } llm_config_t;
 
 /*
@@ -76,24 +86,32 @@ void llm_parser_shutdown(void);
 int llm_parser_ready(void);
 
 /*
- * Helper: Check whether an input matches an expected AGI word list
- * Returns 1 if match (confidence >= min_confidence), 0 otherwise
+ * Extract verb and noun from user input (any language) to English words
+ * Returns a static buffer with extracted words (e.g., "look castle")
+ * Used in EXTRACTION mode - faster than semantic matching
  */
-int llm_parser_matches_expected(const char *input, const char *context,
-                                const int *expected_word_ids, int expected_count,
-                                float min_confidence);
+const char *llm_parser_extract_words(const char *input);
 
 /*
- * Generate a response/description using the LLM
+ * Check if input matches expected command (Semantic Match)
+ * Used in SEMANTIC mode - slower but more precise
+ */
+int llm_parser_matches_expected(const char *input,
+                                const int *expected_word_ids,
+                                int expected_count);
+
+/*
+ * Generate a game response using the LLM
+ * Translates game response to player's language and adds context
  *
- * @param prompt: Prompt for generation
- * @param context: Game context
+ * @param game_response: Original game response (usually in English)
+ * @param user_input: Original user input (in their language)
  * @param output: Output buffer
  * @param output_size: Size of output buffer
- * @return: Number of characters generated
+ * @return: Number of characters generated, or 0 on failure
  */
-// int llm_parser_generate(const char *prompt, const char *context,
-//                         char *output, int output_size);
+int llm_parser_generate_response(const char *game_response, const char *user_input,
+                                  char *output, int output_size);
 
 #ifdef __cplusplus
 }
