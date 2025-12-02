@@ -26,34 +26,9 @@ extern "C" {
 #define LLM_MAX_PROMPT_SIZE 4096
 #define LLM_MAX_RESPONSE_SIZE 1024
 #define LLM_DEFAULT_CONTEXT_SIZE 4096
-#define LLM_DEFAULT_BATCH_SIZE 512
+#define LLM_DEFAULT_BATCH_SIZE 1024
+#define LLM_DEFAULT_U_BATCH_SIZE 512
 #define LLM_DEFAULT_THREADS 4
-
-/*
- * Parse result structure
- * Contains the verb/noun mapping from natural language input
- */
-typedef struct {
-    int success;           /* 1 if parsing succeeded */
-    int verb_id;           /* AGI verb word ID */
-    int noun_id;           /* AGI noun word ID */
-    int second_noun_id;    /* Second noun if present (e.g., "use X with Y") */
-    char verb_str[64];     /* Verb as string */
-    char noun_str[64];     /* Noun as string */
-    char canonical[128];   /* Canonical form (e.g., "look at door") */
-    float confidence;      /* Confidence score 0.0-1.0 */
-    char llm_response[LLM_MAX_RESPONSE_SIZE];  /* Raw LLM response */
-} llm_parse_result_t;
-
-/*
- * Vocabulary entry for mapping words to AGI IDs
- */
-typedef struct {
-    int word_id;           /* AGI word ID */
-    char word[64];         /* Word string */
-    char synonyms[256];    /* Comma-separated synonyms */
-    int is_verb;           /* 1 if verb, 0 if noun */
-} llm_vocab_entry_t;
 
 /*
  * LLM configuration structure
@@ -62,6 +37,7 @@ typedef struct {
     char model_path[LLM_MAX_MODEL_PATH];
     int context_size;
     int batch_size;
+    int u_batch_size;
     int n_threads;
     float temperature;
     float top_p;
@@ -118,21 +94,6 @@ int llm_parser_matches_expected(const char *input, const char *context,
  */
 // int llm_parser_generate(const char *prompt, const char *context,
 //                         char *output, int output_size);
-
-/*
- * Set game-specific prompt additions
- *
- * @param game_info: Game-specific information for the prompt
- */
-// void llm_parser_set_game_info(const char *game_info);
-
-/*
- * Configure LLM parameters at runtime
- *
- * @param param: Parameter name
- * @param value: Parameter value (as string)
- */
-// void llm_parser_set_param(const char *param, const char *value);
 
 #ifdef __cplusplus
 }

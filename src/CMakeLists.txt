@@ -332,8 +332,8 @@ if(NAGI_ENABLE_LLM)
         target_link_libraries(nagi PRIVATE "-framework Metal" "-framework MetalPerformanceShaders")
     endif()
         
-    set(DEFAULT_MODEL_PATH "${CMAKE_BINARY_DIR}/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf")
-    target_compile_definitions(nagi PRIVATE 
+    set(DEFAULT_MODEL_PATH "${CMAKE_BINARY_DIR}/models/Phi-3-mini-4k-instruct-q4.gguf")
+    target_compile_definitions(nagi PRIVATE
         NAGI_ENABLE_LLM=1
         NAGI_DEFAULT_LLM_MODEL_PATH="${DEFAULT_MODEL_PATH}"
     )
@@ -341,10 +341,10 @@ if(NAGI_ENABLE_LLM)
     add_custom_command(
         OUTPUT "${DEFAULT_MODEL_PATH}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/models"
-        COMMAND ${CMAKE_COMMAND} -E echo "Downloading TinyLlama model to ${DEFAULT_MODEL_PATH}..."
+        COMMAND ${CMAKE_COMMAND} -E echo "Downloading Phi-3-mini model to ${DEFAULT_MODEL_PATH}..."
         COMMAND curl -f -L --retry 3 -o "${DEFAULT_MODEL_PATH}"
-            "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
-        COMMENT "Downloading TinyLlama model..."
+            "https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf"
+        COMMENT "Downloading Phi-3-mini-4k-instruct (Q4, 2.3GB) model..."
         VERBATIM
     )
 

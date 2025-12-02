@@ -38,6 +38,10 @@ _Finish                          cseg     000002AE 00000015
 #include "ui/events.h"
 #include "ui/controller.h"
 #include "ui/status.h"
+
+#ifdef NAGI_ENABLE_LLM
+#include "llm/llm_context.h"
+#endif
 #include "ui/cmd_input.h"
 #include "logic/logic_base.h"
 #include "sys/ini_config.h"
@@ -96,6 +100,11 @@ int main(int argc, char *argv[])
 		flag_reset(F04_SAIDACCEPT);	// said command has not yet accepted the user input
 		state.var[V19_KEYPRESSED] = 0;
 		state.var[V09_BADWORD] = 0;
+
+		#ifdef NAGI_ENABLE_LLM
+		/* Clear LLM input at the start of each cycle */
+		llm_context_clear_last_player_input();
+		#endif
 		
 		// TODO: need joy polling setup.
 		//poll_joystick();	// poll the joystick

@@ -633,7 +633,7 @@ const char *llm_context_get_last_player_input(void)
 }
 
 /* Clear the last stored player input */
-void llm_context_clear_last_player_input(void);
+void llm_context_clear_last_player_input(void)
 {
     if (g_llm_context.history_count == 0) return;
 
