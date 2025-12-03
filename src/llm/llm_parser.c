@@ -59,12 +59,13 @@ static const char *EXTRACTION_PROMPT_SIMPLE =
 /* Prompt for response generation - translates game response to user's language */
 static const char *RESPONSE_GENERATION_PROMPT =
     "<|user|>\n"
-    "You are a text adventure game narrator. Translate the game response to the same language "
-    "the player used in their input. Keep it concise and in the style of classic adventure games.\n\n"
-    "Player input: %s\n"
-    "Game response: %s\n"
-    "%s"  /* Optional context */
-    "Translate the game response to the player's language:<|end|>\n"
+    "You are a text adventure game narrator. Translate ONLY the game response to match "
+    "the exact language the player used. Do NOT include any context information in your answer.\n\n"
+    "Player said: %s\n"
+    "Game responded: %s\n"
+    "%s\n"  /* Optional context - for information only */
+    "Translate ONLY the game response above to the player's language (Spanish, English, etc.). "
+    "Output only the translated text, nothing else:<|end|>\n"
     "<|assistant|>\n";
 
 /* Prompt for SEMANTIC mode - matches input meaning with expected command */
@@ -123,7 +124,8 @@ struct llm_state {
     /* For real LLM backend */
     struct llama_model *model;
     struct llama_context *ctx;
-    struct llama_sampler *sampler;
+    struct llama_sampler *sampler;           /* For extraction/semantic (deterministic) */
+    struct llama_sampler *sampler_creative;  /* For response generation (creative) */
 
     /* Common fields */
     int initialized;
@@ -234,7 +236,7 @@ int llm_parser_init(const char *model_path, const llm_config_t *config)
         return 0;
     }
 
-    /* Create sampler */
+    /* Create sampler for extraction/semantic (deterministic) */
     g_llm_state->sampler = llama_sampler_chain_init(llama_sampler_chain_default_params());
     llama_sampler_chain_add(g_llm_state->sampler,
         llama_sampler_init_top_k(g_llm_config.top_k));
@@ -243,6 +245,17 @@ int llm_parser_init(const char *model_path, const llm_config_t *config)
     llama_sampler_chain_add(g_llm_state->sampler,
         llama_sampler_init_temp(g_llm_config.temperature));
     llama_sampler_chain_add(g_llm_state->sampler,
+        llama_sampler_init_dist(42));
+
+    /* Create sampler for response generation (creative) */
+    g_llm_state->sampler_creative = llama_sampler_chain_init(llama_sampler_chain_default_params());
+    llama_sampler_chain_add(g_llm_state->sampler_creative,
+        llama_sampler_init_top_k(40));
+    llama_sampler_chain_add(g_llm_state->sampler_creative,
+        llama_sampler_init_top_p(0.9f, 1));
+    llama_sampler_chain_add(g_llm_state->sampler_creative,
+        llama_sampler_init_temp(0.7f));
+    llama_sampler_chain_add(g_llm_state->sampler_creative,
         llama_sampler_init_dist(42));
 
     /* Initialize sequence counter */
@@ -266,6 +279,9 @@ void llm_parser_shutdown(void)
 
     if (g_llm_state->sampler) {
         llama_sampler_free(g_llm_state->sampler);
+    }
+    if (g_llm_state->sampler_creative) {
+        llama_sampler_free(g_llm_state->sampler_creative);
     }
     if (g_llm_state->ctx) {
         llama_free(g_llm_state->ctx);
@@ -918,15 +934,15 @@ int llm_parser_generate_response(const char *game_response, const char *user_inp
     llama_batch_free(batch);
     free(tokens);
 
-    /* Generate response */
+    /* Generate response using creative sampler */
     int response_len = 0;
     struct llama_batch batch_gen = llama_batch_init(1, 0, 8);
     int gen_count = 0;
     int max_response_tokens = 150;  /* Limit for adventure game responses */
 
     while (response_len < output_size - 1 && gen_count < max_response_tokens) {
-        llama_token new_token = llama_sampler_sample(g_llm_state->sampler, g_llm_state->ctx, -1);
-        llama_sampler_accept(g_llm_state->sampler, new_token);
+        llama_token new_token = llama_sampler_sample(g_llm_state->sampler_creative, g_llm_state->ctx, -1);
+        llama_sampler_accept(g_llm_state->sampler_creative, new_token);
 
         if (llama_vocab_is_eog(llama_model_get_vocab(g_llm_state->model), new_token)) {
             break;
