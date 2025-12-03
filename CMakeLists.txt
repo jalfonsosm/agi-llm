@@ -74,5 +74,6 @@ endif()
 
 # Fetch and configure SDL3 (before adding src so it's available)
 include(AddSDL3)
+include(AddSDL3_ttf)
 
 add_subdirectory(src)

@@ -16,6 +16,7 @@ extern void vid_unlock(void);
 extern void vid_update(POS *pos, AGISIZE *size);
 extern void vid_notify_window_size_changed(SDL_WindowID windowID);
 extern void vid_palette_set(PCOLOUR *palette, u8 num);
+extern void vid_palette_get_color(u8 index, u8 *r, u8 *g, u8 *b);
 extern void vid_fill(POS *pos, AGISIZE *size, u32 colour);
 extern void vid_shake(int count);
 

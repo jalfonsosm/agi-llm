@@ -24,7 +24,8 @@ else()
     set(SDL_STATIC ON CACHE BOOL "" FORCE)
     set(SDL_TEST OFF CACHE BOOL "" FORCE)
     set(SDL_TESTS OFF CACHE BOOL "" FORCE)
-    set(SDL_INSTALL OFF CACHE BOOL "" FORCE)
+    # Enable install to generate proper CMake config files for find_package
+    set(SDL_INSTALL ON CACHE BOOL "" FORCE)
 
     # Disable subsystems we don't need to speed up build
     set(SDL_SENSOR OFF CACHE BOOL "" FORCE)
@@ -54,7 +55,49 @@ else()
 
     FetchContent_MakeAvailable(SDL3)
 
+    # Create a simple SDL3Config.cmake that exposes the targets
+    # This allows SDL3_ttf to find SDL3 via find_package()
+    set(SDL3_CONFIG_DIR "${CMAKE_BINARY_DIR}/sdl3_config")
+    file(MAKE_DIRECTORY "${SDL3_CONFIG_DIR}")
+
+    file(WRITE "${SDL3_CONFIG_DIR}/SDL3Config.cmake" "
+# SDL3 Config file for FetchContent usage
+set(SDL3_FOUND TRUE)
+set(SDL3_VERSION \"3.2.14\")
+set(SDL3_INCLUDE_DIRS \"${sdl3_SOURCE_DIR}/include\" \"${sdl3_BINARY_DIR}/include\")
+set(SDL3_LIBRARIES SDL3-static)
+
+# Export targets if they don't already exist
+# Only create aliases if the underlying target exists
+if(TARGET SDL3-static)
+    if(NOT TARGET SDL3::SDL3-static)
+        add_library(SDL3::SDL3-static ALIAS SDL3-static)
+    endif()
+
+    if(NOT TARGET SDL3::SDL3)
+        add_library(SDL3::SDL3 ALIAS SDL3-static)
+    endif()
+endif()
+")
+
+    # Create version file
+    file(WRITE "${SDL3_CONFIG_DIR}/SDL3ConfigVersion.cmake" "
+# SDL3 version file for FetchContent usage
+set(PACKAGE_VERSION \"3.2.14\")
+
+# Check whether the requested PACKAGE_FIND_VERSION is compatible
+if(\"\${PACKAGE_VERSION}\" VERSION_LESS \"\${PACKAGE_FIND_VERSION}\")
+    set(PACKAGE_VERSION_COMPATIBLE FALSE)
+else()
+    set(PACKAGE_VERSION_COMPATIBLE TRUE)
+    if(\"\${PACKAGE_VERSION}\" VERSION_EQUAL \"\${PACKAGE_FIND_VERSION}\")
+        set(PACKAGE_VERSION_EXACT TRUE)
+    endif()
+endif()
+")
+
     message(STATUS "SDL3 fetched and configured for static build")
+    message(STATUS "Created SDL3Config.cmake at: ${SDL3_CONFIG_DIR}")
 endif()
 
 # Prefer static linking

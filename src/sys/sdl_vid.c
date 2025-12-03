@@ -380,6 +380,24 @@ void vid_palette_set(PCOLOUR *palette, u8 num)
 	}
 }
 
+/* Get RGB color from palette by index */
+void vid_palette_get_color(u8 index, u8 *r, u8 *g, u8 *b)
+{
+	const SDL_Color *colors;
+	u8 palette_index;
+
+	assert(video_data.palette);
+	assert(video_data.palette->ncolors > 0);
+
+	/* Wrap index to available palette colors (e.g., CGA has only 4 colors) */
+	palette_index = index % (u8)video_data.palette->ncolors;
+
+	colors = video_data.palette->colors;
+	*r = colors[palette_index].r;
+	*g = colors[palette_index].g;
+	*b = colors[palette_index].b;
+}
+
 //derived:
 //-----------------------------------------------------------
 

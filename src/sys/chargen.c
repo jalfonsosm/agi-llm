@@ -12,6 +12,9 @@
 #include <stdio.h>
 #include <string.h>
 
+/* SDL_ttf for TrueType font rendering */
+#include <SDL3_ttf/SDL_ttf.h>
+
 /* OTHER headers	---	---	---	---	---	---	--- */
 //#include "view/crap.h"
 #include "chargen.h"
@@ -60,6 +63,10 @@ static u8 *font_work = 0;
 AGISIZE font_size = {0,0};
 static u32 font_chsize = 0;
 static u32 font_linesize = 0;
+
+/* TTF font support */
+static TTF_Font *ttf_font = NULL;
+static SDL_Surface *glyph_cache[256] = {NULL};  /* Pre-rendered glyphs for ASCII */
 
 static POS update_pos = {0,0};
 static AGISIZE update_size = {0,0};
@@ -177,16 +184,43 @@ static void font_load(FILE *font_stream)
 void ch_init(void)
 {
 	AGISIZE needed;
+	int font_point_size;
 
 	needed.w = rend_drv->w * c_vid_scale / 40;
 	needed.h = rend_drv->h * c_vid_scale / 21;
 
-	// pick the right font.. load it up
+	/* Initialize SDL_ttf */
+	if (!TTF_Init()) {
+		printf("ch_init(): Failed to initialize SDL_ttf: %s\n", SDL_GetError());
+		agi_exit();
+	}
+
+	/* Load TTF font with appropriate point size based on needed height */
+	/* The point size is roughly the pixel height we want */
+	font_point_size = needed.h;
+
 	dir_preset_change(DIR_PRESET_NAGI);
-	font_load(font_open(&needed));
+	ttf_font = TTF_OpenFont("IBMPlexMono-Regular.ttf", font_point_size);
 
+	if (!ttf_font) {
+		printf("ch_init(): Failed to load TTF font: %s\n", SDL_GetError());
+		printf("ch_init(): Falling back to bitmap fonts...\n");
+		/* Fallback to bitmap fonts */
+		font_load(font_open(&needed));
+	} else {
+		/* Use the needed cell size to maintain proper grid positioning */
+		/* This must match the calculation used for gfx_pos.y = font_size.h * row */
+		font_size.w = needed.w;
+		font_size.h = needed.h;
 
-	// FIXME..  SCALE THE GOD DAMN FONTTTTT!!
+		printf("TTF font loaded successfully: %dx%d pixels per character cell\n",
+		       font_size.w, font_size.h);
+
+		/* Pre-render all ASCII characters to cache */
+		for (int i = 0; i < 256; i++) {
+			glyph_cache[i] = NULL;  /* Will be rendered on first use */
+		}
+	}
 
 	// text pos = 0,0
 	chgen_textpos.row = 0;
@@ -199,6 +233,23 @@ void ch_shutdown(void)
 	chgen_textpos.row = 0;
 	chgen_textpos.col = 0;
 
+	/* Free TTF resources */
+	if (ttf_font) {
+		/* Free glyph cache */
+		for (int i = 0; i < 256; i++) {
+			if (glyph_cache[i]) {
+				SDL_DestroySurface(glyph_cache[i]);
+				glyph_cache[i] = NULL;
+			}
+		}
+
+		TTF_CloseFont(ttf_font);
+		ttf_font = NULL;
+	}
+
+	TTF_Quit();
+
+	/* Free bitmap font resources */
 	a_free(font_data);
 	a_free(font_work);
 	font_data = 0;
@@ -291,81 +342,180 @@ void ch_attrib( u8 colour, u16 flags )
 
 void ch_put(u8 ch)
 {
-	u8 *pixels;
 	POS gfx_pos;
-	u8 *fontp;
-	int h_count;
-	u32 w_count;
-	u8 mask_xor = 0;
-	u8 mask_or = 0;
-	u8 font_d, b;
-	
+
 	gfx_pos.x = font_size.w * chgen_textpos.col;
 	gfx_pos.y = font_size.h * chgen_textpos.row;
 
-	pixels = (u8 *)vid_getbuf() + gfx_pos.y*vid_getlinesize() + gfx_pos.x;
+	/* Use TTF rendering if available, otherwise fall back to bitmap */
+	if (ttf_font) {
+		SDL_Surface *glyph_surf;
+		SDL_Color fg_color;
+		u8 fg_index, bg_index;
+		char text[2];
+		int font_ascent, font_height;
+		u8 temp;
+		u8 *pixels;
+		int y, x;
+		int glyph_y_offset;
 
-	if (   ((given_flags&TEXT_INVERT)!=0) ||
-		(((given_colour & 0x80)!=0) && (chgen_textmode==0))    )
+		/* Extract foreground and background color indices */
+		fg_index = given_colour & 0x0F;
+		bg_index = (given_colour & 0x70) >> 4;
+
+		/* Handle invert flag - swap fg and bg indices */
+		if (((given_flags & TEXT_INVERT) != 0) ||
+		    (((given_colour & 0x80) != 0) && (chgen_textmode == 0))) {
+			temp = fg_index;
+			fg_index = bg_index;
+			bg_index = temp;
+		}
+
+		/* Get foreground color from system palette */
+		vid_palette_get_color(fg_index, &fg_color.r, &fg_color.g, &fg_color.b);
+		fg_color.a = 255;
+
+		/* Render glyph with alpha blending */
+		text[0] = (char)ch;
+		text[1] = '\0';
+
+		/* Get font metrics for proper baseline positioning */
+		font_ascent = TTF_GetFontAscent(ttf_font);
+		font_height = TTF_GetFontHeight(ttf_font);
+
+		glyph_surf = TTF_RenderText_Blended(ttf_font, text, 1, fg_color);
+
+		if (glyph_surf) {
+			const SDL_PixelFormatDetails *fmt_details;
+			u8 *dst_line;
+
+			/* Get pixel format details for SDL_GetRGBA */
+			fmt_details = SDL_GetPixelFormatDetails(glyph_surf->format);
+
+			/* Calculate baseline position within cell */
+			/* Position baseline at a proportional height within the cell */
+			/* The ascent should be in the upper portion of the cell */
+			glyph_y_offset = (font_size.h * font_ascent) / font_height - font_ascent;
+
+			vid_lock();
+			pixels = (u8 *)vid_getbuf() + gfx_pos.y * vid_getlinesize() + gfx_pos.x;
+
+			/* FIRST: Clear entire character cell with background color */
+			/* Like bitmap fonts, fill the entire cell to prevent ghosting */
+			dst_line = pixels;
+			for (y = 0; y < font_size.h; y++) {
+				for (x = 0; x < font_size.w; x++) {
+					dst_line[x] = bg_index;
+				}
+				dst_line += vid_getlinesize();
+			}
+
+			/* SECOND: Copy glyph with proper vertical offset based on baseline */
+			/* The glyph is positioned relative to the baseline within the cell */
+			for (y = 0; y < glyph_surf->h && (y + glyph_y_offset) < font_size.h; y++) {
+				Uint32 *src;
+				u8 *dst;
+				int dst_y;
+
+				/* Skip if glyph would be above the cell */
+				dst_y = y + glyph_y_offset;
+				if (dst_y < 0) continue;
+
+				src = (Uint32 *)((Uint8 *)glyph_surf->pixels + y * glyph_surf->pitch);
+				dst = pixels + dst_y * vid_getlinesize();
+
+				for (x = 0; x < glyph_surf->w && x < font_size.w; x++) {
+					Uint32 pixel;
+					Uint8 r, g, b, a;
+
+					pixel = src[x];
+
+					/* Extract RGBA from 32-bit pixel */
+					SDL_GetRGBA(pixel, fmt_details, NULL, &r, &g, &b, &a);
+
+					/* Only draw if pixel is sufficiently opaque (>50% alpha) */
+					/* Since we already filled background, no need for complex blending */
+					if (a > 127) {
+						dst[x] = fg_index;
+					}
+					/* else: keep background color (already written) */
+				}
+			}
+
+			vid_unlock();
+			SDL_DestroySurface(glyph_surf);
+		}
+
+		font_lazy_update(&gfx_pos, &font_size);
+	}
+	else {
+		/* Fallback to original bitmap rendering */
+		u8 *pixels;
+		u8 *fontp;
+		int h_count;
+		u32 w_count;
+		u8 mask_xor = 0;
+		u8 mask_or = 0;
+		u8 font_d, b;
+
+		pixels = (u8 *)vid_getbuf() + gfx_pos.y * vid_getlinesize() + gfx_pos.x;
+
+		if (((given_flags & TEXT_INVERT) != 0) ||
+		    (((given_colour & 0x80) != 0) && (chgen_textmode == 0)))
 			mask_xor = 0xFF;
 
-	if ((given_flags & TEXT_SHADE) != 0)
-		mask_or = 0xAA;
+		if ((given_flags & TEXT_SHADE) != 0)
+			mask_or = 0xAA;
 
-	if ((mask_xor | mask_or) != 0)
-	{	
-		u8 *pp;
-		
-		fontp = font_work;
-		memcpy(fontp, font_data + (font_chsize*ch), font_chsize);
-		pp = fontp;
+		if ((mask_xor | mask_or) != 0) {
+			u8 *pp;
 
-		for (h_count=0; h_count<font_size.h; h_count++)
-		{
-			for (w_count=0; w_count<font_linesize ; w_count++)
-			{
-				*pp ^= mask_xor;
-				*pp |= mask_or;
-				pp++;
+			fontp = font_work;
+			memcpy(fontp, font_data + (font_chsize * ch), font_chsize);
+			pp = fontp;
+
+			for (h_count = 0; h_count < font_size.h; h_count++) {
+				for (w_count = 0; w_count < font_linesize; w_count++) {
+					*pp ^= mask_xor;
+					*pp |= mask_or;
+					pp++;
+				}
+				if (mask_or != 0)
+					mask_or ^= 0xFF;
 			}
-			if (mask_or != 0)
-				mask_or ^= 0xFF;
 		}
-	}
-	else
-	{
-		fontp = font_data + (font_chsize*ch);
-	}
+		else {
+			fontp = font_data + (font_chsize * ch);
+		}
 
-	vid_lock();
+		vid_lock();
 
-	for (h_count=0;h_count<font_size.h; h_count++)
-	{
-		w_count = font_size.w;
-		font_d = *(fontp++);
-		b = 0x80;	// 1000 0000b
+		for (h_count = 0; h_count < font_size.h; h_count++) {
+			w_count = font_size.w;
+			font_d = *(fontp++);
+			b = 0x80; // 1000 0000b
 
-		while (w_count != 0)  // for characters more than 8 bits wide
-		{
-			if (b==0)
+			while (w_count != 0) // for characters more than 8 bits wide
 			{
-				font_d = *(fontp++);
-				b = 0x80;	// 1000 0000b
+				if (b == 0) {
+					font_d = *(fontp++);
+					b = 0x80; // 1000 0000b
+				}
+
+				if ((font_d & b) != 0)
+					*pixels = given_colour & 0x0F;
+				else
+					*pixels = (given_colour & 0x70) >> 4;
+				pixels++;
+				b >>= 1;
+				w_count--;
 			}
-
-			if ((font_d & b) != 0)
-				*pixels = given_colour & 0x0F;
-			else
-				*pixels = (given_colour & 0x70)>>4;
-			pixels++;
-			b >>= 1;
-			w_count--;
+			pixels += vid_getlinesize() - font_size.w;
 		}
-		pixels += vid_getlinesize() - font_size.w;
-	}
 
-	vid_unlock();
-	font_lazy_update(&gfx_pos, &font_size);
+		vid_unlock();
+		font_lazy_update(&gfx_pos, &font_size);
+	}
 }
 
 

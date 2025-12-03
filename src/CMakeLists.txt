@@ -244,7 +244,7 @@ if(NAGI_ENABLE_LLM)
     target_sources(nagi PRIVATE ${llm_sources})
 endif()
 
-target_link_libraries(nagi PRIVATE ${SDL3_TARGET})
+target_link_libraries(nagi PRIVATE ${SDL3_TARGET} ${SDL3_TTF_TARGET})
 
 include(ExternalProject)
 if(NAGI_ENABLE_LLM)
@@ -459,6 +459,7 @@ set(NAGI_DATA_FILES
     ${CMAKE_SOURCE_DIR}/bin/font_4x8.nbf
     ${CMAKE_SOURCE_DIR}/bin/font_8x8.nbf
     ${CMAKE_SOURCE_DIR}/bin/font_16x16.nbf
+    ${CMAKE_SOURCE_DIR}/bin/IBMPlexMono-Regular.ttf
     ${CMAKE_SOURCE_DIR}/bin/nagi.ini
     ${CMAKE_SOURCE_DIR}/bin/standard.ini
 )
