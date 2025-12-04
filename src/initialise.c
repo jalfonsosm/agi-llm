@@ -71,7 +71,7 @@ _RoomInit                        cseg     000012DE 00000015
 #include "log.h"
 
 #ifdef NAGI_ENABLE_LLM
-#include "llm/llm_parser.h"
+#include "llm_global.h"
 #endif
 
 
@@ -87,6 +87,12 @@ void room_init(void);
 
 
 /* VARIABLES	---	---	---	---	---	---	--- */
+
+#ifdef NAGI_ENABLE_LLM
+/* Global LLM instance and configuration */
+nagi_llm_t *g_llm = NULL;
+nagi_llm_config_t g_llm_config = {0};
+#endif
 
 
 /* CODE	---	---	---	---	---	---	---	--- */
@@ -202,10 +208,21 @@ void nagi_init()
 	llm_model_path = getenv("NAGI_LLM_MODEL_PATH");
 #endif
 	if (llm_model_path && llm_model_path[0]) {
-		if (!llm_parser_init(llm_model_path, NULL)) {
-			fprintf(stderr, "LLM initialization failed for model: %s\n", llm_model_path);
+		/* Create LLM instance with llama.cpp backend */
+		g_llm = nagi_llm_create(NAGI_LLM_BACKEND_LLAMACPP);
+		if (!g_llm) {
+			fprintf(stderr, "Failed to create LLM instance\n");
 		} else {
-			fprintf(stderr, "LLM initialized with model: %s\n", llm_model_path);
+			/* Initialize with model path and NULL config (uses defaults) */
+			if (!nagi_llm_init(g_llm, llm_model_path, NULL)) {
+				fprintf(stderr, "LLM initialization failed for model: %s\n", llm_model_path);
+				nagi_llm_destroy(g_llm);
+				g_llm = NULL;
+			} else {
+				fprintf(stderr, "LLM initialized with model: %s\n", llm_model_path);
+				/* Copy configuration from instance to global (for mode checking in other files) */
+				g_llm_config = g_llm->config;
+			}
 		}
 	} else {
 		fprintf(stderr, "LLM model path not provided; skipping LLM initialization\n");
@@ -233,7 +250,20 @@ void agi_init()
 	
 	dir_preset_change(DIR_PRESET_GAME);
 	words_tok_data = file_load("words.tok", 0);
-	
+
+#ifdef NAGI_ENABLE_LLM
+	/* Pass dictionary to LLM backend if initialized */
+	if (g_llm && words_tok_data) {
+		/* Calculate size of words.tok file - header is 52 bytes (26 * 2-byte offsets) */
+		/* For now, we'll pass the whole file and let the backend handle it */
+		if (nagi_llm_set_dictionary(g_llm, (const unsigned char *)words_tok_data, 0xFFFF)) {
+			fprintf(stderr, "Dictionary passed to LLM backend\n");
+		} else {
+			fprintf(stderr, "Warning: Failed to pass dictionary to LLM backend\n");
+		}
+	}
+#endif
+
 	logic_list_init();
 	view_list_init();
 	sound_list_init();
@@ -348,8 +378,12 @@ void nagi_shutdown(void)
 	gfx_shutdown();
 
 #ifdef NAGI_ENABLE_LLM
-        /* Shutdown LLM cleanly */
-        llm_parser_shutdown();
+	/* Shutdown LLM cleanly */
+	if (g_llm) {
+		nagi_llm_shutdown(g_llm);
+		nagi_llm_destroy(g_llm);
+		g_llm = NULL;
+	}
 #endif
 	
 	printf("nagi_shutdown: SDL_Quit...\n"); fflush(stdout);

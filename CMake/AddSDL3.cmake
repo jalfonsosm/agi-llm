@@ -5,10 +5,20 @@ include(FetchContent)
 # First try to find SDL3 installed on the system
 find_package(SDL3 QUIET CONFIG)
 
+# Check if SDL3 was found AND provides usable targets
+set(SDL3_USABLE FALSE)
 if(SDL3_FOUND)
-    message(STATUS "Found system SDL3")
-else()
-    message(STATUS "SDL3 not found on system - fetching and building from source...")
+    # Verify that at least one usable target exists
+    if(TARGET SDL3::SDL3-static OR TARGET SDL3-static OR TARGET SDL3::SDL3-shared OR TARGET SDL3::SDL3 OR TARGET SDL3)
+        set(SDL3_USABLE TRUE)
+        message(STATUS "Found system SDL3 with usable targets")
+    else()
+        message(STATUS "Found system SDL3 but no usable targets - will build from source")
+    endif()
+endif()
+
+if(NOT SDL3_USABLE)
+    message(STATUS "SDL3 not found on system or not usable - fetching and building from source...")
 
     # Fetch SDL3 from GitHub - use stable release tag
     FetchContent_Declare(
@@ -108,6 +118,9 @@ elseif(TARGET SDL3-static)
     # When built via FetchContent, target might not have namespace
     set(SDL3_TARGET SDL3-static)
     message(STATUS "Using SDL3 static library (FetchContent)")
+elseif(TARGET SDL3::SDL3-shared)
+    set(SDL3_TARGET SDL3::SDL3-shared)
+    message(STATUS "Using SDL3 shared library (system)")
 elseif(TARGET SDL3::SDL3)
     set(SDL3_TARGET SDL3::SDL3)
     message(STATUS "Using SDL3 shared library")
@@ -115,5 +128,11 @@ elseif(TARGET SDL3)
     set(SDL3_TARGET SDL3)
     message(STATUS "Using SDL3 (FetchContent)")
 else()
-    message(FATAL_ERROR "SDL3 target not found!")
+    # Debug: List all available targets
+    message(STATUS "SDL3_FOUND: ${SDL3_FOUND}")
+    if(SDL3_FOUND)
+        get_property(imported_targets DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY IMPORTED_TARGETS)
+        message(STATUS "Available imported targets: ${imported_targets}")
+    endif()
+    message(FATAL_ERROR "SDL3 target not found! Available targets listed above.")
 endif()

@@ -40,7 +40,7 @@ _Finish                          cseg     000002AE 00000015
 #include "ui/status.h"
 
 #ifdef NAGI_ENABLE_LLM
-#include "llm/llm_context.h"
+#include "llm_global.h"
 #endif
 #include "ui/cmd_input.h"
 #include "logic/logic_base.h"

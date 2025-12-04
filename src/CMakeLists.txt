@@ -216,15 +216,6 @@ set(lib_sources
     lib/utf8_decode.h
 )
 
-if(NAGI_ENABLE_LLM)
-    set(llm_sources
-        llm/llm_context.c
-        llm/llm_context.h
-        llm/llm_parser.c
-        llm/llm_parser.h
-    )
-endif()
-
 target_sources(nagi
     PRIVATE
     ${base_sources}
@@ -240,106 +231,22 @@ target_sources(nagi
     ${lib_sources}
 )
 
-if(NAGI_ENABLE_LLM)
-    target_sources(nagi PRIVATE ${llm_sources})
-endif()
-
 target_link_libraries(nagi PRIVATE ${SDL3_TARGET} ${SDL3_TTF_TARGET})
 
-include(ExternalProject)
 if(NAGI_ENABLE_LLM)
-    set(LLAMA_PREFIX ${CMAKE_BINARY_DIR}/_deps/llama)
+    target_link_libraries(nagi PRIVATE nagi-llm)
+    target_include_directories(nagi PRIVATE ${CMAKE_SOURCE_DIR}/lib/nagi-llm/include)
 
-    set(LLAMA_CMAKE_FLAGS
-        -DLLAMA_BUILD_SHARED=OFF
-        -DLLAMA_STATIC=ON
-        -DBUILD_SHARED_LIBS=OFF
-        -DLLAMA_ALL_WARNINGS=OFF
-        -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-        -DLLAMA_NATIVE=OFF
-        -DLLAMA_AVX=OFF
-        -DLLAMA_AVX2=OFF
-        -DLLAMA_AVX512=OFF
-        -DLLAMA_FMA=OFF
-        -DLLAMA_F16C=OFF
-        -DLLAMA_METAL=ON
-        -DLLAMA_ACCELERATE=ON
-        -DLLAMA_FLASH_ATTN=ON
-    )
-
-    if(APPLE)
-        if(NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
-            execute_process(COMMAND sw_vers -productVersion
-                OUTPUT_VARIABLE _swvers OUTPUT_STRIP_TRAILING_WHITESPACE)
-            string(REGEX MATCH "^[0-9]+\.[0-9]+" _mac_ver "${_swvers}")
-            if(_mac_ver)
-                set(CMAKE_OSX_DEPLOYMENT_TARGET "${_mac_ver}" CACHE STRING "macOS deployment target" FORCE)
-            endif()
-        endif()
-        
-        if(CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS "10.15")
-            set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "macOS deployment target" FORCE)
-        endif()
-
-        list(APPEND LLAMA_CMAKE_FLAGS
-            -DLLAMA_METAL=ON
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}
-            -DCMAKE_OSX_ARCHITECTURES=arm64
-        )
-    # else()
-    #     list(APPEND LLAMA_CMAKE_FLAGS
-    #         -DGGML_CUDA=ON
-    #         -DLLAMA_CUBLAS=ON
-    #     )
-    endif()
-
-    ExternalProject_Add(llama_cpp
-        GIT_REPOSITORY "https://github.com/ggerganov/llama.cpp.git"
-        GIT_TAG master
-        PREFIX ${LLAMA_PREFIX}
-        UPDATE_COMMAND ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> git submodule update --init --recursive
-        CONFIGURE_COMMAND ${CMAKE_COMMAND} -S <SOURCE_DIR> -B <BINARY_DIR> ${LLAMA_CMAKE_FLAGS}
-        BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR>
-        INSTALL_COMMAND ""
-    )
-    
-    set(LLAMA_SOURCE_DIR ${LLAMA_PREFIX}/src/llama_cpp)
-    set(LLAMA_BUILD_DIR ${LLAMA_PREFIX}/src/llama_cpp-build)
-    set(LLAMA_INCLUDE_DIR ${LLAMA_SOURCE_DIR}/include)
-
+    # llama.cpp is already configured in AddLlamaCpp.cmake
+    # Just add the dependency and include directories
     add_dependencies(nagi llama_cpp)
-    
-    target_include_directories(nagi PRIVATE 
+
+    target_include_directories(nagi PRIVATE
         ${LLAMA_SOURCE_DIR}
         ${LLAMA_INCLUDE_DIR}
         ${LLAMA_SOURCE_DIR}/ggml/include
     )
 
-    set(LLAMA_LIB ${LLAMA_BUILD_DIR}/src/libllama.a)
-    set(GGML_LIB ${LLAMA_BUILD_DIR}/ggml/src/libggml.a)
-    set(GGML_BASE_LIB ${LLAMA_BUILD_DIR}/ggml/src/libggml-base.a)
-
-    set(GGML_BACKEND_LIBS
-        ${LLAMA_BUILD_DIR}/ggml/src/ggml-blas/libggml-blas.a
-        ${LLAMA_BUILD_DIR}/ggml/src/libggml-cpu.a
-        ${LLAMA_BUILD_DIR}/ggml/src/ggml-metal/libggml-metal.a
-    )
-
-    set(NAGI_LL_LIBS
-        ${LLAMA_LIB}
-        ${GGML_LIB}
-        ${GGML_BASE_LIB}
-    )
-    
-    list(APPEND NAGI_LL_LIBS ${GGML_BACKEND_LIBS})
-
-    target_link_libraries(nagi PRIVATE ${NAGI_LL_LIBS})
-
-    if(APPLE)
-        target_link_libraries(nagi PRIVATE "-framework Accelerate")
-        target_link_libraries(nagi PRIVATE "-framework Metal" "-framework MetalPerformanceShaders")
-    endif()
-        
     set(DEFAULT_MODEL_PATH "${CMAKE_BINARY_DIR}/models/llm_model.gguf")
     target_compile_definitions(nagi PRIVATE
         NAGI_ENABLE_LLM=1

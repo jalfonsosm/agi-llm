@@ -36,8 +36,7 @@ CmdCompareStrns                  cseg     000009DB 0000000F
 
 #ifdef NAGI_ENABLE_LLM
 /* LLM interfaces for fallback matching */
-#include "../llm/llm_parser.h"
-#include "../llm/llm_context.h"
+#include "../llm_global.h"
 #endif
 
 // byte-order support
@@ -251,7 +250,7 @@ u8 cmd_said()
 		 * - SEMANTIC mode: Use semantic matching to compare input with expected command
 		 * - DISABLED mode: No LLM, just fail
 		 */
-		if (llm_parser_ready() && flag_test(F04_SAIDACCEPT) == 0 && g_llm_config.mode == LLM_MODE_SEMANTIC) {
+		if (nagi_llm_ready(g_llm) && flag_test(F04_SAIDACCEPT) == 0 && g_llm_config.mode == NAGI_LLM_MODE_SEMANTIC) {
 			/* SEMANTIC MODE: Compare user input meaning with expected command */
 			/* Only try if we have unknown words */
 			if (state.var[V09_BADWORD] > 0) {
@@ -266,7 +265,7 @@ u8 cmd_said()
 						expected[ecount++] = w;
 					}
 
-					if (llm_parser_matches_expected(last_input, expected, ecount)) {
+					if (nagi_llm_matches_expected(g_llm, last_input, expected, ecount)) {
 						flag_set(F04_SAIDACCEPT);
 						logic_data += word_remaining << 1;
 						return 1;

@@ -48,8 +48,7 @@ _DispNewLine                     cseg     0000234E 0000001F
 #include "../sys/error.h"
 
 #ifdef NAGI_ENABLE_LLM
-#include "../llm/llm_parser.h"
-#include "../llm/llm_context.h"
+#include "../llm_global.h"
 #endif
 
 static u8 *print_at(u16 msg_num, u8 *c);
@@ -162,15 +161,15 @@ int message_box(const char *var8)
 	static int translation_cached = 0;
 
 	/* Check if this is a new message or the same one being redrawn */
-	if (llm_parser_ready() && var8 && var8[0] != '\0') {
+	if (nagi_llm_ready(g_llm) && var8 && var8[0] != '\0') {
 		/* If message changed, translate it */
 		if (!translation_cached || strcmp(var8, last_original) != 0) {
 			const char *user_input = llm_context_get_last_player_input();
 
 			/* Only translate if we have user input (not menu/system messages) */
 			if (user_input && user_input[0] != '\0') {
-				int len = llm_parser_generate_response(var8, user_input,
-				                                        translated_msg, sizeof(translated_msg));
+				int len = nagi_llm_generate_response(g_llm, var8, user_input,
+				                                      translated_msg, sizeof(translated_msg));
 				if (len > 0) {
 					/* Cache successful translation */
 					strncpy(last_original, var8, sizeof(last_original) - 1);

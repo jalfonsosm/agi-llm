@@ -32,8 +32,7 @@ _WordNext                        cseg     00001BE4 00000020
 #define WORD_BUF_SIZE 10
 
 #ifdef NAGI_ENABLE_LLM
-#include "../llm/llm_context.h"
-#include "../llm/llm_parser.h"
+#include "../llm_global.h"
 #endif
 
 void parse(const char *string);
@@ -102,9 +101,9 @@ void parse(const char *string)
 	 * extract verb+noun in English using LLM and re-parse.
 	 * This is faster than semantic matching: O(1) extraction vs O(N) comparisons.
 	 */
-	if (llm_parser_ready() && g_llm_config.mode == LLM_MODE_EXTRACTION &&
+	if (nagi_llm_ready(g_llm) && g_llm_config.mode == NAGI_LLM_MODE_EXTRACTION &&
 	    (word_total == 0 || state.var[V09_BADWORD] > 0)) {
-		const char *extracted = llm_parser_extract_words(string);
+		const char *extracted = nagi_llm_extract_words(g_llm, string);
 
 		/* Only re-parse if extraction is different from original input */
 		if (extracted && strcmp(extracted, string) != 0) {
