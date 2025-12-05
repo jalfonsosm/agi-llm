@@ -8,6 +8,11 @@ project(NAGI
     LANGUAGES C
 )
 
+# LLM Options
+option(NAGI_LLM_ENABLE_LLAMACPP "Enable llama.cpp backend" ON)
+option(NAGI_LLM_ENABLE_BITNET "Enable BitNet backend" OFF)
+option(NAGI_LLM_ENABLE_CLOUD_API "Enable cloud API backend" OFF)
+
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/CMake")
 
 # Interprocedural optimisation
@@ -78,6 +83,9 @@ include(AddSDL3_ttf)
 
 # Configure llama.cpp (before adding nagi-llm so variables are available)
 include(AddLlamaCpp)
+
+# Configure BitNet.cpp (if enabled)
+include(AddBitNet)
 
 # Add NAGI-LLM library (abstract LLM interface)
 add_subdirectory(lib/nagi-llm)

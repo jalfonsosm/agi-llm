@@ -5,7 +5,6 @@ set_target_properties(nagi PROPERTIES
     C_EXTENSIONS NO
 )
 
-option(NAGI_ENABLE_LLM "Enable LLM (llama.cpp) support" ON)
 
 # All include files references are relative to the source file (not ideal)
 # target_include_directories(nagi PRIVATE .)
@@ -233,21 +232,22 @@ target_sources(nagi
 
 target_link_libraries(nagi PRIVATE ${SDL3_TARGET} ${SDL3_TTF_TARGET})
 
-if(NAGI_ENABLE_LLM)
+if(NAGI_LLM_ENABLE_LLAMACPP OR NAGI_LLM_ENABLE_BITNET)
     target_link_libraries(nagi PRIVATE nagi-llm)
     target_include_directories(nagi PRIVATE ${CMAKE_SOURCE_DIR}/lib/nagi-llm/include)
 
-    # llama.cpp is already configured in AddLlamaCpp.cmake
-    # Just add the dependency and include directories
-    add_dependencies(nagi llama_cpp)
+    if(NAGI_LLM_ENABLE_BITNET)
+        set(DEFAULT_MODEL_PATH "${CMAKE_BINARY_DIR}/models/bitnetcpp_model.gguf")
+        set(MODEL_URL "https://huggingface.co/microsoft/bitnet-b1.58-2B-4T-gguf/resolve/main/ggml-model-i2_s.gguf")
+        message(STATUS "LLM Model: BitNet 1.58-bit (2B parameters)")
+    else()
+        set(DEFAULT_MODEL_PATH "${CMAKE_BINARY_DIR}/models/llamacpp_model.gguf")
+        set(MODEL_URL "https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF/resolve/main/Phi-3-mini-4k-instruct-Q4_K_M.gguf")
+        # set(MODEL_URL "https://huggingface.co/itlwas/Vikhr-Gemma-2B-instruct-Q4_K_M-GGUF/resolve/main/vikhr-gemma-2b-instruct-q4_k_m.gguf")
+        # set(MODEL_URL "https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF/blob/main/Phi-3-mini-4k-instruct-Q3_K_L.gguf")
+        message(STATUS "LLM Model: Phi-3 Mini 4k Instruct (Q4_K_M)")
+    endif()
 
-    target_include_directories(nagi PRIVATE
-        ${LLAMA_SOURCE_DIR}
-        ${LLAMA_INCLUDE_DIR}
-        ${LLAMA_SOURCE_DIR}/ggml/include
-    )
-
-    set(DEFAULT_MODEL_PATH "${CMAKE_BINARY_DIR}/models/llm_model.gguf")
     target_compile_definitions(nagi PRIVATE
         NAGI_ENABLE_LLM=1
         NAGI_DEFAULT_LLM_MODEL_PATH="${DEFAULT_MODEL_PATH}"
@@ -257,12 +257,8 @@ if(NAGI_ENABLE_LLM)
         OUTPUT "${DEFAULT_MODEL_PATH}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/models"
         COMMAND ${CMAKE_COMMAND} -E echo "Downloading LLM model to ${DEFAULT_MODEL_PATH}..."
-        COMMAND curl -f -L --retry 3 -o "${DEFAULT_MODEL_PATH}"
-            # "https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf"
-            "https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF/resolve/main/Phi-3-mini-4k-instruct-Q4_K_M.gguf"
-            # "https://huggingface.co/itlwas/Vikhr-Gemma-2B-instruct-Q4_K_M-GGUF/resolve/main/vikhr-gemma-2b-instruct-q4_k_m.gguf"
-            # "https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF/blob/main/Phi-3-mini-4k-instruct-Q3_K_L.gguf"
-            COMMENT "Downloading LLM model..."
+        COMMAND curl -f -L --retry 3 -o "${DEFAULT_MODEL_PATH}" "${MODEL_URL}"
+        COMMENT "Downloading LLM model..."
         VERBATIM
     )
 

@@ -3,9 +3,8 @@
 
 include(ExternalProject)
 
-option(NAGI_ENABLE_LLM "Enable LLM (llama.cpp) support" ON)
 
-if(NAGI_ENABLE_LLM)
+if(NAGI_LLM_ENABLE_LLAMACPP)
     set(LLAMA_PREFIX ${CMAKE_BINARY_DIR}/_deps/llama)
 
     set(LLAMA_CMAKE_FLAGS

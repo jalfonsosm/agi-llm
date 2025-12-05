@@ -2,10 +2,6 @@
 cmake_minimum_required(VERSION 3.15)
 project(nagi-llm VERSION 1.0.0 LANGUAGES C)
 
-# Library options
-option(NAGI_LLM_ENABLE_LLAMACPP "Enable llama.cpp backend" ON)
-option(NAGI_LLM_ENABLE_BITNET "Enable BitNet backend" OFF)
-option(NAGI_LLM_ENABLE_CLOUD_API "Enable cloud API backend" OFF)
 
 # Create library
 add_library(nagi-llm STATIC)
@@ -62,13 +58,40 @@ if(NAGI_LLM_ENABLE_LLAMACPP)
     message(STATUS "NAGI-LLM: llama.cpp backend enabled")
 endif()
 
-# BitNet backend (future)
+# BitNet backend
 if(NAGI_LLM_ENABLE_BITNET)
     target_sources(nagi-llm PRIVATE
-        src/nagi_llm_bitnet.c
+        backends/bitnet/nagi_llm_bitnet.c
     )
+
+    # Add backends directory to include path
+    target_include_directories(nagi-llm PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/backends/bitnet
+    )
+
     target_compile_definitions(nagi-llm PUBLIC NAGI_LLM_HAS_BITNET=1)
-    message(STATUS "NAGI-LLM: BitNet backend enabled")
+
+    # Include BitNet headers (provided by parent project)
+    if(DEFINED BITNET_INCLUDE_DIR)
+        target_include_directories(nagi-llm PRIVATE
+            ${BITNET_SOURCE_DIR}
+            ${BITNET_INCLUDE_DIR}
+            ${BITNET_GGML_INCLUDE_DIR}
+            ${BITNET_SRC_INCLUDE_DIR}
+        )
+    endif()
+
+    # Link BitNet libraries (provided by parent project)
+    if(DEFINED NAGI_BITNET_LIBS)
+        target_link_libraries(nagi-llm PUBLIC ${NAGI_BITNET_LIBS})
+    endif()
+
+    # Add dependency on bitnet_cpp external project
+    if(TARGET bitnet_cpp)
+        add_dependencies(nagi-llm bitnet_cpp)
+    endif()
+
+    message(STATUS "NAGI-LLM: BitNet backend enabled (real implementation)")
 endif()
 
 # Cloud API backend (future)
