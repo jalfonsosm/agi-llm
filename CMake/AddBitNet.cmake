@@ -131,6 +131,10 @@ if(NAGI_LLM_ENABLE_BITNET)
     # set(BITNET_HF_MODEL "tiiuae/Falcon3-1B-Instruct-1.58bit")
     # set(BITNET_HF_MODEL "1bitLLM/bitnet_b1_58-3B")
     
+    # Note: setup_env.py uses the model name (without user/org) as the directory name
+    set(MODEL_URL "https://huggingface.co/microsoft/bitnet-b1.58-2B-4T-gguf/resolve/main/ggml-model-i2_s.gguf")        
+    message(STATUS "LLM Model: BitNet 1.58-bit (2B parameters)")
+
     ExternalProject_Add(bitnet_cpp
         GIT_REPOSITORY "https://github.com/microsoft/BitNet.git"
         GIT_TAG main
@@ -185,7 +189,8 @@ if(NAGI_LLM_ENABLE_BITNET)
         list(APPEND NAGI_BITNET_LIBS "-framework Accelerate")
     endif()
 
-    message(STATUS "BitNet.cpp configuration prepared")
     message(STATUS "BitNet source dir: ${BITNET_SOURCE_DIR}")
     message(STATUS "BitNet include dir: ${BITNET_INCLUDE_DIR}")
+
+    set(BITNET_MODEL_PATH "${BITNET_SOURCE_DIR}/models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf" CACHE INTERNAL "Path to BitNet model")
 endif()

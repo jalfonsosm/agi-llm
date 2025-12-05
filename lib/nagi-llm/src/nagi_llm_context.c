@@ -149,7 +149,6 @@ void llm_context_add_object(int obj_id, const char *name, int room)
     }
 
     g_llm_context.context_dirty = 1;
-    (void)name;  /* Used when we have object names loaded */
 }
 
 /*
@@ -444,7 +443,6 @@ void llm_context_on_var_change(int var_num, int new_value)
         g_llm_context.score = new_value;
         llm_context_addf(CTX_SYSTEM_MSG, "Score changed to %d", new_value);
     }
-    (void)new_value;
 }
 
 /*

@@ -3,7 +3,6 @@
 
 include(ExternalProject)
 
-
 if(NAGI_LLM_ENABLE_LLAMACPP)
     set(LLAMA_PREFIX ${CMAKE_BINARY_DIR}/_deps/llama)
 
@@ -44,6 +43,12 @@ if(NAGI_LLM_ENABLE_LLAMACPP)
             -DCMAKE_OSX_ARCHITECTURES=arm64
         )
     endif()
+        
+    set(DEFAULT_MODEL_PATH "${CMAKE_BINARY_DIR}/models/llamacpp_model.gguf")
+    set(MODEL_URL "https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF/resolve/main/Phi-3-mini-4k-instruct-Q4_K_M.gguf")
+    # set(MODEL_URL "https://huggingface.co/itlwas/Vikhr-Gemma-2B-instruct-Q4_K_M-GGUF/resolve/main/vikhr-gemma-2b-instruct-q4_k_m.gguf")
+    # set(MODEL_URL "https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF/blob/main/Phi-3-mini-4k-instruct-Q3_K_L.gguf")
+    message(STATUS "LLM Model: Phi-3 Mini 4k Instruct (Q4_K_M)")
 
     ExternalProject_Add(llama_cpp
         GIT_REPOSITORY "https://github.com/ggerganov/llama.cpp.git"

@@ -129,12 +129,10 @@ static const char *extract_game_verbs(bitnet_state_t *state)
  */
 static int bitnet_init(nagi_llm_t *llm, const char *model_path, const nagi_llm_config_t *config)
 {
-    bitnet_state_t *state;
+    bitnet_state_t *state = NULL;
 
     struct llama_model_params model_params;
     struct llama_context_params ctx_params;
-
-    (void)llm;
 
     if (state && state->initialized) {
         fprintf(stderr, "BitNet: Already initialized\n");
@@ -150,12 +148,10 @@ static int bitnet_init(nagi_llm_t *llm, const char *model_path, const nagi_llm_c
         memset(state, 0, sizeof(*state));
     }
 
+    llm->impl_data = state;
+
     if (config) {
         memcpy(&llm->config, config, sizeof(nagi_llm_config_t));
-    }
-    if (model_path) {
-        strncpy(llm->config.model_path, model_path, NAGI_LLM_MAX_MODEL_PATH - 1);
-        llm->config.model_path[NAGI_LLM_MAX_MODEL_PATH - 1] = ' ';
     }
 
     if (model_path && model_path[0] != '\0') {
@@ -228,7 +224,6 @@ static int bitnet_init(nagi_llm_t *llm, const char *model_path, const nagi_llm_c
 static void bitnet_shutdown(nagi_llm_t *llm)
 {
     bitnet_state_t *state = (bitnet_state_t *)llm->impl_data;
-    (void)llm;
 
     if (!state) return;
 
@@ -259,7 +254,6 @@ static void bitnet_shutdown(nagi_llm_t *llm)
 static int bitnet_ready(nagi_llm_t *llm)
 {
     bitnet_state_t *state = (bitnet_state_t *)llm->impl_data;
-    (void)llm;
     return state && state->initialized;
 }
 
@@ -278,8 +272,6 @@ static const char *bitnet_extract_words(nagi_llm_t *llm, const char *input)
     int i, k, n_eval;
     int piece_len;
     bitnet_state_t *state = (bitnet_state_t *)llm->impl_data;
-
-    (void)llm;
 
     if (!bitnet_ready(llm)) return input;
     if (!input || input[0] == '\0') return input;
@@ -501,8 +493,6 @@ static int bitnet_generate_response(nagi_llm_t *llm, const char *game_response,
                                    const char *user_input, char *output, int output_size)
 {
     bitnet_state_t *state = (bitnet_state_t *)llm->impl_data;
-    (void)llm;
-    (void)user_input;
 
     if (!bitnet_ready(llm)) return 0;
     if (!game_response || !output || output_size <= 0) return 0;
@@ -520,7 +510,6 @@ static int bitnet_generate_response(nagi_llm_t *llm, const char *game_response,
 static int bitnet_set_dictionary(nagi_llm_t *llm, const unsigned char *dictionary, size_t size)
 {
     bitnet_state_t *state = (bitnet_state_t *)llm->impl_data;
-    (void)llm;
 
     if (!state) {
         fprintf(stderr, "BitNet: Cannot set dictionary - not initialized\n");
@@ -571,7 +560,7 @@ nagi_llm_t *nagi_llm_bitnet_create(void)
     llm->config.top_k = 1;
     llm->config.max_tokens = 5;
     llm->config.use_gpu = 0;  /* BitNet is CPU-optimized */
-    llm->config.verbose = 0;
+    llm->config.verbose = 1;
     llm->config.mode = NAGI_LLM_MODE_EXTRACTION;
 
     return llm;

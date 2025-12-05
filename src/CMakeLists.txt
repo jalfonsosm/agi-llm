@@ -237,34 +237,41 @@ if(NAGI_LLM_ENABLE_LLAMACPP OR NAGI_LLM_ENABLE_BITNET)
     target_include_directories(nagi PRIVATE ${CMAKE_SOURCE_DIR}/lib/nagi-llm/include)
 
     if(NAGI_LLM_ENABLE_BITNET)
-        set(DEFAULT_MODEL_PATH "${CMAKE_BINARY_DIR}/models/bitnetcpp_model.gguf")
-        set(MODEL_URL "https://huggingface.co/microsoft/bitnet-b1.58-2B-4T-gguf/resolve/main/ggml-model-i2_s.gguf")
-        message(STATUS "LLM Model: BitNet 1.58-bit (2B parameters)")
-    else()
-        set(DEFAULT_MODEL_PATH "${CMAKE_BINARY_DIR}/models/llamacpp_model.gguf")
-        set(MODEL_URL "https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF/resolve/main/Phi-3-mini-4k-instruct-Q4_K_M.gguf")
-        # set(MODEL_URL "https://huggingface.co/itlwas/Vikhr-Gemma-2B-instruct-Q4_K_M-GGUF/resolve/main/vikhr-gemma-2b-instruct-q4_k_m.gguf")
-        # set(MODEL_URL "https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF/blob/main/Phi-3-mini-4k-instruct-Q3_K_L.gguf")
-        message(STATUS "LLM Model: Phi-3 Mini 4k Instruct (Q4_K_M)")
-    endif()
+        set(MODEL_FILENAME "bitnet_model.gguf")
+        set(DEFAULT_MODEL_PATH "${CMAKE_BINARY_DIR}/models/${MODEL_FILENAME}")
 
+        add_custom_command(
+            OUTPUT "${DEFAULT_MODEL_PATH}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/models"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${BITNET_MODEL_PATH}" "${DEFAULT_MODEL_PATH}"
+            DEPENDS "${BITNET_MODEL_PATH}"
+            COMMENT "Copying BitNet model to build directory..."
+            VERBATIM
+        )
+        
+        add_custom_target(copy_bitnet_model DEPENDS "${DEFAULT_MODEL_PATH}")
+        add_dependencies(nagi copy_bitnet_model)
+        
+        message(STATUS "LLM Model: BitNet 1.58-bit (2B parameters) will be copied to ${DEFAULT_MODEL_PATH}")
+    else()
+        add_custom_command(
+            OUTPUT "${DEFAULT_MODEL_PATH}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/models"
+            COMMAND ${CMAKE_COMMAND} -E echo "Downloading LLM model to ${DEFAULT_MODEL_PATH}..."
+            COMMAND curl -f -L --retry 3 -o "${DEFAULT_MODEL_PATH}" "${MODEL_URL}"
+            COMMENT "Downloading LLM model..."
+            VERBATIM
+        )
+
+        add_custom_target(download_model DEPENDS "${DEFAULT_MODEL_PATH}")
+        add_dependencies(nagi download_model)
+    endif()
+    
     target_compile_definitions(nagi PRIVATE
         NAGI_ENABLE_LLM=1
         NAGI_DEFAULT_LLM_MODEL_PATH="${DEFAULT_MODEL_PATH}"
     )
 
-    add_custom_command(
-        OUTPUT "${DEFAULT_MODEL_PATH}"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/models"
-        COMMAND ${CMAKE_COMMAND} -E echo "Downloading LLM model to ${DEFAULT_MODEL_PATH}..."
-        COMMAND curl -f -L --retry 3 -o "${DEFAULT_MODEL_PATH}" "${MODEL_URL}"
-        COMMENT "Downloading LLM model..."
-        VERBATIM
-    )
-
-    add_custom_target(download_model DEPENDS "${DEFAULT_MODEL_PATH}")
-    add_dependencies(nagi download_model)
-    
     message(STATUS "LLM (llama.cpp) support enabled - static library")
     message(STATUS "Llama.cpp include dir: ${LLAMA_SOURCE_DIR}")
 else()

@@ -202,14 +202,25 @@ void nagi_init()
 	/* Initialize LLM if available. Prefer compile-time default model path,
 	   otherwise fall back to environment variable `NAGI_LLM_MODEL_PATH`. */
 	const char *llm_model_path = NULL;
+	
 #if defined(NAGI_DEFAULT_LLM_MODEL_PATH)
 	llm_model_path = NAGI_DEFAULT_LLM_MODEL_PATH;
 #else
 	llm_model_path = getenv("NAGI_LLM_MODEL_PATH");
 #endif
 	if (llm_model_path && llm_model_path[0]) {
-		/* Create LLM instance with llama.cpp backend */
-		g_llm = nagi_llm_create(NAGI_LLM_BACKEND_LLAMACPP);
+#ifdef NAGI_LLM_HAS_LLAMACPP
+		nagi_llm_backend_t backend = NAGI_LLM_BACKEND_LLAMACPP;
+#elif defined(NAGI_LLM_HAS_BITNET)
+		nagi_llm_backend_t backend = NAGI_LLM_BACKEND_BITNET;
+#elif defined(NAGI_LLM_HAS_CLOUD_API)
+		nagi_llm_backend_t backend = NAGI_LLM_BACKEND_CLOUD_API;
+#else
+		nagi_llm_backend_t backend = NAGI_LLM_BACKEND_NONE;
+#endif
+
+		g_llm = nagi_llm_create(backend);
+		
 		if (!g_llm) {
 			fprintf(stderr, "Failed to create LLM instance\n");
 		} else {
