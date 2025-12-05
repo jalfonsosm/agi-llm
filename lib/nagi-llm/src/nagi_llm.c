@@ -52,20 +52,6 @@ nagi_llm_t *nagi_llm_create(nagi_llm_backend_t backend)
 
     if (llm) {
         llm->backend = backend;
-        /* Initialize config with defaults */
-        memset(&llm->config, 0, sizeof(llm->config));
-        llm->config.backend = backend;
-        llm->config.context_size = NAGI_LLM_DEFAULT_CONTEXT_SIZE;
-        llm->config.batch_size = NAGI_LLM_DEFAULT_BATCH_SIZE;
-        llm->config.u_batch_size = NAGI_LLM_DEFAULT_U_BATCH_SIZE;
-        llm->config.n_threads = NAGI_LLM_DEFAULT_THREADS;
-        llm->config.temperature = 0.0f;  /* Greedy decoding by default */
-        llm->config.top_p = 0.9f;
-        llm->config.top_k = 1;
-        llm->config.max_tokens = 5;
-        llm->config.use_gpu = 1;
-        llm->config.verbose = 0;
-        llm->config.mode = NAGI_LLM_MODE_EXTRACTION;
     }
 
     return llm;

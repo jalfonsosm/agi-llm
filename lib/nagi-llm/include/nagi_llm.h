@@ -88,71 +88,70 @@ struct nagi_llm {
     /*
      * Initialize the LLM backend
      *
-     * @param self: LLM instance
+     * @param llm: LLM instance
      * @param model_path: Path to model file or API configuration
      * @param config: Configuration (NULL for defaults)
      * @return: 1 on success, 0 on failure
      */
-    int (*init)(nagi_llm_t *self, const char *model_path, const nagi_llm_config_t *config);
+    int (*init)(nagi_llm_t *llm, const char *model_path, const nagi_llm_config_t *config);
 
     /*
      * Shutdown the LLM backend
      *
-     * @param self: LLM instance
+     * @param llm: LLM instance
      */
-    void (*shutdown)(nagi_llm_t *self);
+    void (*shutdown)(nagi_llm_t *llm);
 
     /*
      * Check if LLM is initialized and ready
      *
-     * @param self: LLM instance
+     * @param llm: LLM instance
      * @return: 1 if ready, 0 otherwise
      */
-    int (*ready)(nagi_llm_t *self);
+    int (*ready)(nagi_llm_t *llm);
 
     /*
      * Extract verb and noun from user input (any language) to English words
      *
-     * @param self: LLM instance
+     * @param llm: LLM instance
      * @param input: User input string
      * @return: Static buffer with extracted words (e.g., "look castle"), or NULL on failure
      */
-    const char *(*extract_words)(nagi_llm_t *self, const char *input);
-
+    const char *(*extract_words)(nagi_llm_t *llm, const char *input);
     /*
      * Check if input matches expected command (Semantic Match)
      *
-     * @param self: LLM instance
+     * @param llm: LLM instance
      * @param input: User input string
      * @param expected_word_ids: Array of expected word IDs
      * @param expected_count: Number of expected words
      * @return: 1 if matches, 0 otherwise
      */
-    int (*matches_expected)(nagi_llm_t *self, const char *input,
+    int (*matches_expected)(nagi_llm_t *llm, const char *input,
                            const int *expected_word_ids, int expected_count);
 
     /*
      * Generate a game response using the LLM
      *
-     * @param self: LLM instance
+     * @param llm: LLM instance
      * @param game_response: Original game response (usually in English)
      * @param user_input: Original user input (in their language)
      * @param output: Output buffer
      * @param output_size: Size of output buffer
      * @return: Number of characters generated, or 0 on failure
      */
-    int (*generate_response)(nagi_llm_t *self, const char *game_response,
+    int (*generate_response)(nagi_llm_t *llm, const char *game_response,
                             const char *user_input, char *output, int output_size);
 
     /*
      * Set dictionary data for the LLM backend
      *
-     * @param self: LLM instance
+     * @param llm: LLM instance
      * @param dictionary: Pointer to dictionary data (e.g., words.tok)
      * @param size: Size of dictionary data in bytes
      * @return: 1 on success, 0 on failure
      */
-    int (*set_dictionary)(nagi_llm_t *self, const unsigned char *dictionary, size_t size);
+    int (*set_dictionary)(nagi_llm_t *llm, const unsigned char *dictionary, size_t size);
 };
 
 /*
