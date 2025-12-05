@@ -9,8 +9,8 @@ project(NAGI
 )
 
 # LLM Options
-option(NAGI_LLM_ENABLE_LLAMACPP "Enable llama.cpp backend" ON)
-option(NAGI_LLM_ENABLE_BITNET "Enable BitNet backend" OFF)
+option(NAGI_LLM_ENABLE_LLAMACPP "Enable llama.cpp backend" OFF)
+option(NAGI_LLM_ENABLE_BITNET "Enable BitNet backend" ON)
 option(NAGI_LLM_ENABLE_CLOUD_API "Enable cloud API backend" OFF)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/CMake")

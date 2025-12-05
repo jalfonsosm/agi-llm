@@ -91,7 +91,7 @@ if(NAGI_LLM_ENABLE_BITNET)
         add_dependencies(nagi-llm bitnet_cpp)
     endif()
 
-    message(STATUS "NAGI-LLM: BitNet backend enabled (real implementation)")
+    message(STATUS "NAGI-LLM: BitNet backend enabled")
 endif()
 
 # Cloud API backend (future)

@@ -1,13 +1,15 @@
 # BitNet.cpp configuration for NAGI-LLM library
-# BitNet is a 1.58-bit LLM framework built on top of llama.cpp with optimized kernels
 
 include(ExternalProject)
-
 
 if(NAGI_LLM_ENABLE_BITNET)
     set(BITNET_PREFIX ${CMAKE_BINARY_DIR}/_deps/bitnet)
 
-    # Detect ARM vs x86 for kernel selection
+    # if(APPLE)
+    #     set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "" FORCE)
+    #     message(STATUS "BitNet: Forcing arm64 architecture for Apple Silicon")
+    # endif()
+
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)")
         set(BITNET_ARM_TL1 ON)
         set(BITNET_X86_TL2 OFF)
@@ -18,15 +20,45 @@ if(NAGI_LLM_ENABLE_BITNET)
         message(STATUS "BitNet: x86 platform detected, enabling TL2 kernels")
     endif()
 
-    # Adjust optimization level based on build type
-    # Debug: Use -O2 for faster compilation (~15 min instead of 2+ hours)
-    # Release: Use -O3 for maximum runtime performance
-    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        set(BITNET_OPT_FLAGS "-O2")
-        message(STATUS "BitNet: Using -O2 optimization (faster compilation for Debug)")
+    # === APPLE SILICON FIX: Disable problematic LLVM optimization ===
+    if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
+        # Use -O2 for both Debug and Release to avoid LLVM bug
+        set(BITNET_OPT_FLAGS "-O2 -mllvm -disable-interleaved-load-combine")
+        message(STATUS "BitNet: Apple Silicon detected, applying LLVM workaround")
+        message(STATUS "BitNet: Using ${BITNET_OPT_FLAGS} to prevent compilation hangs")
     else()
-        set(BITNET_OPT_FLAGS "-O3")
-        message(STATUS "BitNet: Using -O3 optimization (maximum performance for Release)")
+        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+            set(BITNET_OPT_FLAGS "-O2")
+            message(STATUS "BitNet: Using -O2 optimization (faster compilation for Debug)")
+        else()
+            set(BITNET_OPT_FLAGS "-O3")
+            message(STATUS "BitNet: Using -O3 optimization (maximum performance for Release)")
+        endif()
+    endif()
+
+    # Find Homebrew LLVM 18 for Apple Silicon
+    if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
+        find_program(CLANG_18 clang-18
+            PATHS /opt/homebrew/opt/llvm@18/bin
+            NO_DEFAULT_PATH
+        )
+        find_program(CLANGXX_18 clang++-18
+            PATHS /opt/homebrew/opt/llvm@18/bin
+            NO_DEFAULT_PATH
+        )
+        
+        if(CLANG_18 AND CLANGXX_18)
+            set(BITNET_C_COMPILER "${CLANG_18}")
+            set(BITNET_CXX_COMPILER "${CLANGXX_18}")
+            message(STATUS "BitNet: Found Homebrew LLVM 18 for Apple Silicon")
+        else()
+            message(WARNING "BitNet: Homebrew LLVM 18 not found. Install with: brew install llvm@18")
+            set(BITNET_C_COMPILER "clang")
+            set(BITNET_CXX_COMPILER "clang++")
+        endif()
+    else()
+        set(BITNET_C_COMPILER "clang")
+        set(BITNET_CXX_COMPILER "clang++")
     endif()
 
     set(BITNET_CMAKE_FLAGS
@@ -36,31 +68,61 @@ if(NAGI_LLM_ENABLE_BITNET)
         -DBITNET_X86_TL2=${BITNET_X86_TL2}
         -DGGML_BITNET_ARM_TL1=${BITNET_ARM_TL1}
         -DGGML_BITNET_X86_TL2=${BITNET_X86_TL2}
+        -DGGML_ACCELERATE=ON
         -DBUILD_SHARED_LIBS=OFF
+        -DCMAKE_C_COMPILER=${BITNET_C_COMPILER}
+        -DCMAKE_CXX_COMPILER=${BITNET_CXX_COMPILER}
         -DCMAKE_CXX_FLAGS_DEBUG=${BITNET_OPT_FLAGS}
-        -DCMAKE_CXX_FLAGS_RELEASE=-O3
+        -DCMAKE_CXX_FLAGS_RELEASE=${BITNET_OPT_FLAGS}
+        -DCMAKE_C_FLAGS=${BITNET_OPT_FLAGS}
     )
 
-    if(APPLE)
-        if(NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
-            execute_process(COMMAND sw_vers -productVersion
-                OUTPUT_VARIABLE _swvers OUTPUT_STRIP_TRAILING_WHITESPACE)
-            string(REGEX MATCH "^[0-9]+\.[0-9]+" _mac_ver "${_swvers}")
-            if(_mac_ver)
-                set(CMAKE_OSX_DEPLOYMENT_TARGET "${_mac_ver}" CACHE STRING "macOS deployment target" FORCE)
-            endif()
-        endif()
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)")
+    # if(APPLE)
+        # if(NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+        #     execute_process(COMMAND sw_vers -productVersion
+        #         OUTPUT_VARIABLE _swvers OUTPUT_STRIP_TRAILING_WHITESPACE)
+        #     string(REGEX MATCH "^[0-9]+\.[0-9]+" _mac_ver "${_swvers}")
+        #     if(_mac_ver)
+        #         set(CMAKE_OSX_DEPLOYMENT_TARGET "${_mac_ver}" CACHE STRING "macOS deployment target" FORCE)
+        #     endif()
+        # endif()
 
-        if(CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS "10.15")
-            set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "macOS deployment target" FORCE)
-        endif()
+        # if(CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS "10.15")
+        #     set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "macOS deployment target" FORCE)
+        # endif()
 
         list(APPEND BITNET_CMAKE_FLAGS
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}
+            # -DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}
             -DCMAKE_OSX_ARCHITECTURES=arm64
-            # Ensure Accelerate is used for BLAS on macOS
-            -DGGML_ACCELERATE=ON
         )
+    endif()
+
+
+    if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
+        set(BITNET_PATCH_CMD 
+            # First, backup the original file
+            COMMAND ${CMAKE_COMMAND} -E copy <SOURCE_DIR>/setup_env.py <SOURCE_DIR>/setup_env.py.backup
+            # Apply Apple Silicon fixes
+            COMMAND sed -i.bak
+                -e "s/\\\"-DCMAKE_C_COMPILER=clang\\\"/\\\"-DCMAKE_C_COMPILER=${BITNET_C_COMPILER}\\\", \\\"-DCMAKE_C_FLAGS=${BITNET_OPT_FLAGS}\\\"/g"
+                -e "s/\\\"-DCMAKE_CXX_COMPILER=clang..\\\"/\\\"-DCMAKE_CXX_COMPILER=${BITNET_CXX_COMPILER}\\\", \\\"-DCMAKE_CXX_FLAGS=${BITNET_OPT_FLAGS}\\\", \\\"-DCMAKE_CXX_FLAGS_RELEASE=${BITNET_OPT_FLAGS}\\\"/g"
+                -e "s/, \\\"--config\\\", \\\"Release\\\"//g"
+                <SOURCE_DIR>/setup_env.py
+            # Add ARM TL2 optimization flag
+            # Removed problematic sed command that introduced makefile syntax errors
+            # The required flags are now set via BITNET_OPT_FLAGS and CMake variables.
+        )
+        message(STATUS "BitNet: Apple Silicon patch will be applied to setup_env.py")
+    elseif(CMAKE_GENERATOR STREQUAL "Xcode" OR CMAKE_GENERATOR STREQUAL "Visual Studio 17 2022")
+        set(BITNET_PATCH_CMD "")
+        message(STATUS "BitNet: Multi-config generator detected, no patch needed")
+    elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set(BITNET_PATCH_CMD "")
+        message(STATUS "BitNet: Debug mode, no patch needed; using -O2 flags via BITNET_OPT_FLAGS")
+    else()
+        set(BITNET_PATCH_CMD "")
+        message(STATUS "BitNet: Release mode with Makefiles, no patch needed")
     endif()
 
     # Select BitNet model for setup (needed to generate kernels)
@@ -68,28 +130,7 @@ if(NAGI_LLM_ENABLE_BITNET)
     set(BITNET_HF_MODEL "microsoft/BitNet-b1.58-2B-4T")
     # set(BITNET_HF_MODEL "tiiuae/Falcon3-1B-Instruct-1.58bit")
     # set(BITNET_HF_MODEL "1bitLLM/bitnet_b1_58-3B")
-
-    # Determine if we need to patch setup_env.py
-    # Xcode (multi-config): No patch needed, --config Release works
-    # Unix Makefiles in Debug: Need patch, --config not supported
-    # Unix Makefiles in Release: No patch needed (matches the hardcoded Release)
-    if(CMAKE_GENERATOR STREQUAL "Xcode" OR CMAKE_GENERATOR STREQUAL "Visual Studio 17 2022")
-        # Multi-config generators support --config flag
-        set(BITNET_PATCH_CMD "")
-        message(STATUS "BitNet: Multi-config generator detected, no patch needed")
-    elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        # Single-config generator in Debug mode needs patch
-        set(BITNET_PATCH_CMD sed -i.bak 
-            -e "s/, \\\"--config\\\", \\\"Release\\\"//g" 
-            -e "s/\\\"-DCMAKE_CXX_COMPILER=clang\\+\\+\\\"/\\\"-DCMAKE_CXX_COMPILER=clang\\+\\+\\\", \\\"-DCMAKE_BUILD_TYPE=Debug\\\", \\\"-DCMAKE_CXX_FLAGS=-O2\\\"/g"
-            <SOURCE_DIR>/setup_env.py)
-        message(STATUS "BitNet: Debug mode, patching setup_env.py to use -O2 and remove --config")
-    else()
-        # Single-config generator in Release mode, no patch needed (matches hardcoded Release)
-        set(BITNET_PATCH_CMD "")
-        message(STATUS "BitNet: Release mode with Makefiles, no patch needed")
-    endif()
-
+    
     ExternalProject_Add(bitnet_cpp
         GIT_REPOSITORY "https://github.com/microsoft/BitNet.git"
         GIT_TAG main
@@ -102,6 +143,7 @@ if(NAGI_LLM_ENABLE_BITNET)
             COMMAND ${CMAKE_COMMAND} -E echo "BitNet: Downloading model and generating kernels..."
             COMMAND ${CMAKE_COMMAND} -E echo "Model: ${BITNET_HF_MODEL} (~700MB)"
             COMMAND ${CMAKE_COMMAND} -E echo "This will take several minutes, please wait..."
+            COMMAND ${CMAKE_COMMAND} -E echo "Apple Silicon fix applied: ${BITNET_OPT_FLAGS}"
             COMMAND ${CMAKE_COMMAND} -E echo "=========================================="
             COMMAND ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> python3 setup_env.py --hf-repo ${BITNET_HF_MODEL}
             COMMAND ${CMAKE_COMMAND} -E echo "=========================================="
@@ -122,20 +164,20 @@ if(NAGI_LLM_ENABLE_BITNET)
     # BitNet libraries (uses llama.cpp libs with BitNet kernels compiled in)
     set(BITNET_LLAMA_LIB ${BITNET_BUILD_DIR}/3rdparty/llama.cpp/src/libllama.a)
     set(BITNET_GGML_LIB ${BITNET_BUILD_DIR}/3rdparty/llama.cpp/ggml/src/libggml.a)
-    set(BITNET_GGML_BASE_LIB ${BITNET_BUILD_DIR}/3rdparty/llama.cpp/ggml/src/libggml-base.a)
-    set(BITNET_GGML_CPU_LIB ${BITNET_BUILD_DIR}/3rdparty/llama.cpp/ggml/src/libggml-cpu.a)
+    # set(BITNET_GGML_BASE_LIB ${BITNET_BUILD_DIR}/3rdparty/llama.cpp/ggml/src/libggml-base.a)
+    # set(BITNET_GGML_CPU_LIB ${BITNET_BUILD_DIR}/3rdparty/llama.cpp/ggml/src/libggml-cpu.a)
 
-    # BitNet-specific libraries
-    set(BITNET_LUT_LIB ${BITNET_BUILD_DIR}/src/libggml-bitnet-lut.a)
-    set(BITNET_MAD_LIB ${BITNET_BUILD_DIR}/src/libggml-bitnet-mad.a)
+    # BitNet-specific libraries are compiled into libggml.a
+    # set(BITNET_LUT_LIB ${BITNET_BUILD_DIR}/src/libggml-bitnet-lut.a)
+    # set(BITNET_MAD_LIB ${BITNET_BUILD_DIR}/src/libggml-bitnet-mad.a)
 
     set(NAGI_BITNET_LIBS
         ${BITNET_LLAMA_LIB}
-        ${BITNET_LUT_LIB}
-        ${BITNET_MAD_LIB}
+        # ${BITNET_LUT_LIB}
+        # ${BITNET_MAD_LIB}
         ${BITNET_GGML_LIB}
-        ${BITNET_GGML_BASE_LIB}
-        ${BITNET_GGML_CPU_LIB}
+        # ${BITNET_GGML_BASE_LIB}
+        # ${BITNET_GGML_CPU_LIB}
     )
 
     # Add system frameworks on macOS
