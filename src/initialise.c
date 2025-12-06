@@ -63,6 +63,7 @@ _RoomInit                        cseg     000012DE 00000015
 #include "config.h"
 
 #include "sys/sys_dir.h"
+#include "sys/agi_file.h"
 
 #include "sound/sound_gen.h"
 #include "base.h"
@@ -265,10 +266,10 @@ void agi_init()
 #ifdef NAGI_ENABLE_LLM
 	/* Pass dictionary to LLM backend if initialized */
 	if (g_llm && words_tok_data) {
-		/* Calculate size of words.tok file - header is 52 bytes (26 * 2-byte offsets) */
-		/* For now, we'll pass the whole file and let the backend handle it */
-		if (nagi_llm_set_dictionary(g_llm, (const unsigned char *)words_tok_data, 0xFFFF)) {
-			fprintf(stderr, "Dictionary passed to LLM backend\n");
+		/* Pass the loaded dictionary data and its size */
+		/* file_buf_size global contains the size of the last loaded file (words.tok) */
+		if (nagi_llm_set_dictionary(g_llm, (const unsigned char *)words_tok_data, file_buf_size)) {
+			fprintf(stderr, "Dictionary passed to LLM backend (size: %u)\n", file_buf_size);
 		} else {
 			fprintf(stderr, "Warning: Failed to pass dictionary to LLM backend\n");
 		}

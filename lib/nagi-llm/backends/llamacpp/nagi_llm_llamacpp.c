@@ -6,7 +6,7 @@
  * NOTE: This file requires llama.cpp to be linked.
  */
 
-#include <stdio.h>
+ #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -15,21 +15,13 @@
 
 #include "nagi_llm_llamacpp.h"
 #include "../../include/nagi_llm_context.h"
+#include "llm_utils.h"
 
 #include "llama.h"
 
 #include <stdint.h>
 #include <stddef.h>
 
-/* Basic types */
-typedef unsigned char u8;
-typedef unsigned short u16;
-typedef unsigned int u32;
-
-/* Local endian conversion function (big-endian to host) */
-static inline u16 load_be_16(const u8 *ptr) {
-    return (u16)((ptr[0] << 8) | ptr[1]);
-}
 
 /* Prompt template for EXTRACTION mode - will be filled with game vocabulary */
 static const char *EXTRACTION_PROMPT_TEMPLATE =
@@ -129,160 +121,6 @@ static const char *SEMANTIC_MATCHING_PROMPT =
     "Does the input match the command?<|end|>\n"
     "<|assistant|>\n";
 
-/* Internal backend state */
-typedef struct llm_state {
-    /* For real LLM backend */
-    struct llama_model *model;
-    struct llama_context *ctx;
-    struct llama_sampler *sampler;           /* For extraction/semantic (deterministic) */
-    struct llama_sampler *sampler_creative;  /* For response generation (creative) */
-
-    /* Common fields */
-    int initialized;
-    char last_error[256];
-
-    /* Sequence counter for rotating through sequences */
-    int seq_counter;
-
-    /* Game dictionary (words.tok data) - passed from game engine */
-    const u8 *dictionary_data;
-    size_t dictionary_size;
-} llm_state_t;
-
-
-/* Common error setter */
-static void set_error(llm_state_t *state, const char *fmt, ...)
-{
-    va_list args;
-    va_start(args, fmt);
-    if (state) {
-        vsnprintf(state->last_error, sizeof(state->last_error), fmt, args);
-    }
-    va_end(args);
-}
-
-static int llamacpp_init(nagi_llm_t *llm, const char *model_path, const nagi_llm_config_t *config)
-{
-    struct llama_model_params model_params;
-    struct llama_context_params ctx_params;
-    llm_state_t *state;
-
-    /* Allocate state */
-    state = (llm_state_t *)calloc(1, sizeof(llm_state_t));
-    if (!state) {
-        fprintf(stderr, "LLM Parser: Failed to allocate state\n");
-        return 0;
-    }
-    
-    /* Apply configuration */
-    llm->impl_data = state;
-
-    if (config) {
-        memcpy(&llm->config, config, sizeof(nagi_llm_config_t));
-    }
-    if (model_path) {
-        strncpy(llm->config.model_path, model_path, NAGI_LLM_MAX_MODEL_PATH - 1);
-        llm->config.model_path[NAGI_LLM_MAX_MODEL_PATH - 1] = '\0';
-    }
-
-    /* Initialize llama backend */
-    llama_backend_init();
-
-    /* Load model */
-    model_params = llama_model_default_params();
-    if (llm->config.use_gpu) {
-        model_params.n_gpu_layers = 999;
-        model_params.main_gpu = 0;
-    } else {
-        model_params.n_gpu_layers = 0;
-    }
-    
-    model_params.use_mmap = true;
-    model_params.use_mlock = false;
-
-    printf("LLM Parser: Loading model from %s...\n", llm->config.model_path);
-    state->model = llama_model_load_from_file(llm->config.model_path, model_params);
-    if (!state->model) {
-        set_error(state, "Failed to load model: %s", llm->config.model_path);
-        fprintf(stderr, "LLM Parser: %s\n", state->last_error);
-        free(state);
-        llm->impl_data = NULL;
-        return 0;
-    }
-
-    /* Create context */
-    ctx_params = llama_context_default_params();
-    ctx_params.n_ctx = llm->config.context_size;
-    ctx_params.n_batch = llm->config.batch_size;
-    ctx_params.n_ubatch = llm->config.u_batch_size;
-    ctx_params.n_threads = llm->config.n_threads;
-    ctx_params.n_threads_batch = llm->config.n_threads;
-    ctx_params.n_seq_max = 8;
-
-    state->ctx = llama_init_from_model(state->model, ctx_params);
-    if (!state->ctx) {
-        set_error(state, "Failed to create context");
-        fprintf(stderr, "LLM Parser: %s\n", state->last_error);
-        llama_model_free(state->model);
-        free(state);
-        llm->impl_data = NULL;
-        return 0;
-    }
-
-    /* Create sampler for extraction/semantic (deterministic) */
-    state->sampler = llama_sampler_chain_init(llama_sampler_chain_default_params());
-    llama_sampler_chain_add(state->sampler, llama_sampler_init_top_k(llm->config.top_k));
-    llama_sampler_chain_add(state->sampler, llama_sampler_init_top_p(llm->config.top_p, 1));
-    llama_sampler_chain_add(state->sampler, llama_sampler_init_temp(llm->config.temperature));
-    llama_sampler_chain_add(state->sampler, llama_sampler_init_dist(42));
-
-    /* Create sampler for response generation (creative) */
-    state->sampler_creative = llama_sampler_chain_init(llama_sampler_chain_default_params());
-    llama_sampler_chain_add(state->sampler_creative, llama_sampler_init_top_k(40));
-    llama_sampler_chain_add(state->sampler_creative, llama_sampler_init_top_p(0.9f, 1));
-    llama_sampler_chain_add(state->sampler_creative, llama_sampler_init_temp(0.7f));
-    llama_sampler_chain_add(state->sampler_creative, llama_sampler_init_dist(42));
-
-    /* Initialize sequence counter */
-    state->seq_counter = 0;
-    state->initialized = 1;
-    
-    printf("LLM Parser: Initialized successfully\n");
-    printf("  Context size: %d\n", llm->config.context_size);
-    printf("  Batch size: %d\n", llm->config.batch_size);
-    printf("  Threads: %d\n", llm->config.n_threads);
-
-    return 1;
-}
-
-/*
- * Shutdown the LLM parser
- */
-static void llamacpp_shutdown(nagi_llm_t *llm)
-{
-    llm_state_t *state = (llm_state_t *)llm->impl_data;
-    if (!state) return;
-
-    if (state->sampler) llama_sampler_free(state->sampler);
-    if (state->sampler_creative) llama_sampler_free(state->sampler_creative);
-    if (state->ctx) llama_free(state->ctx);
-    if (state->model) llama_model_free(state->model);
-    llama_backend_free();
-    
-    free(state);
-    llm->impl_data = NULL;
-    printf("LLM Parser: Shutdown complete\n");
-}
-
-/*
- * Check if LLM is ready
- */
-static int llamacpp_ready(nagi_llm_t *llm)
-{
-    llm_state_t *state = (llm_state_t *)llm->impl_data;
-    return state && state->initialized;
-}
-
 /*
  * Helper: Get word string from word ID
  *
@@ -303,7 +141,7 @@ static int llamacpp_ready(nagi_llm_t *llm)
  */
 static const char *get_word_string(nagi_llm_t *llm, int word_id)
 {
-    llm_state_t *state = (llm_state_t *)llm->impl_data;
+    llm_state_t *state = llm->state;
     static char buffer[64];
     int i;
     int words_checked = 0;
@@ -400,95 +238,6 @@ static const char *get_word_string(nagi_llm_t *llm, int word_id)
 }
 
 /*
- * Extract common verbs from the game dictionary
- * Returns a static buffer with comma-separated verb list (e.g., "look, get, open, close")
- * Extracts first 40-50 words which are typically verbs in AGI games
- */
-static const char *extract_game_verbs(nagi_llm_t *llm)
-{
-    llm_state_t *state = (llm_state_t *)llm->impl_data;
-    static char verb_list[512];
-    static int verbs_extracted = 0;
-
-    /* Only extract once */
-    if (verbs_extracted) {
-        return verb_list;
-    }
-
-    /* Verify that words.tok data is loaded */
-    if (!state->dictionary_data) {
-        fprintf(stderr, "LLM Parser: state->dictionary_data not loaded, cannot extract verbs\n");
-        return NULL;
-    }
-
-    verb_list[0] = '\0';
-    int verb_count = 0;
-    int max_verbs = 50;  /* First ~50 words are usually verbs in AGI */
-
-    /* Iterate through all 26 letter offsets (A-Z) */
-    for (int i = 0; i < 26 && verb_count < max_verbs; i++) {
-        u16 offset = load_be_16(state->dictionary_data + i * 2);
-        if (offset == 0) continue;
-
-        u8 *ptr = state->dictionary_data + offset;
-        char buffer[64];
-        buffer[0] = '\0';
-
-        int words_in_section = 0;
-        while (verb_count < max_verbs) {
-            u8 prefix_count = *ptr;
-
-            /* End of section */
-            if (words_in_section > 0 && prefix_count == 0) {
-                break;
-            }
-
-            ptr++;
-            words_in_section++;
-            int len = prefix_count;
-
-            /* Decode characters */
-            while (1) {
-                u8 byte = *ptr;
-                char decoded_char = (byte & 0x7F) ^ 0x7F;
-
-                if (len < (int)sizeof(buffer) - 1) {
-                    buffer[len++] = decoded_char;
-                }
-
-                if (byte & 0x80) {
-                    ptr++;
-                    break;
-                }
-                ptr++;
-            }
-
-            buffer[len] = '\0';
-
-            /* Read word ID and skip it */
-            ptr += 2;
-
-            /* Add to verb list if there's space */
-            if (strlen(buffer) > 0) {
-                if (verb_list[0] != '\0') {
-                    strncat(verb_list, ", ", sizeof(verb_list) - strlen(verb_list) - 1);
-                }
-                strncat(verb_list, buffer, sizeof(verb_list) - strlen(verb_list) - 1);
-                verb_count++;
-            }
-        }
-    }
-
-    verbs_extracted = 1;
-
-    if (llm->config.verbose) {
-        printf("LLM Parser: Extracted %d verbs from dictionary: %s\n", verb_count, verb_list);
-    }
-
-    return verb_list;
-}
-
-/*
  * Extract verb and noun from user input (EXTRACTION mode)
  * Translates "mira el castillo" -> "look castle"
  * Much faster than semantic matching, uses shorter prompt
@@ -504,7 +253,7 @@ static const char *llamacpp_extract_words(nagi_llm_t *llm, const char *input)
     int response_len, gen_count, max_extract_tokens;
     llama_token *tokens;
 
-    if (!llamacpp_ready(llm)) return input;
+    if (!nagi_llm_ready(llm)) return input;
     if (!input || input[0] == '\0') return input;
 
     /* Extract game verbs for vocabulary hint */
@@ -520,7 +269,7 @@ static const char *llamacpp_extract_words(nagi_llm_t *llm, const char *input)
         snprintf(prompt, sizeof(prompt), EXTRACTION_PROMPT_SIMPLE, input);
     }
 
-    llm_state_t *state = (llm_state_t *)llm->impl_data;
+    llm_state_t *state = llm->state;
 
     /* Use rotating sequence IDs to avoid KV cache conflicts */
     current_seq = (state->seq_counter++) % 8;
@@ -660,7 +409,7 @@ static int llamacpp_matches_expected(nagi_llm_t *llm, const char *input,
     int response_len, gen_count;
     llama_token *tokens;
 
-    if (!llamacpp_ready(llm)) return 0;
+    if (!nagi_llm_ready(llm)) return 0;
     if (expected_count == 0) return 0;
 
     /* Build expected command string from word IDs */
@@ -685,7 +434,7 @@ static int llamacpp_matches_expected(nagi_llm_t *llm, const char *input,
         SEMANTIC_MATCHING_PROMPT,
         expected_command, input);
 
-    llm_state_t *state = (llm_state_t *)llm->impl_data;
+    llm_state_t *state = llm->state;
 
     /* Use rotating sequence IDs to avoid KV cache conflicts */
     current_seq = (state->seq_counter++) % 8;
@@ -847,7 +596,7 @@ static int llamacpp_matches_expected(nagi_llm_t *llm, const char *input,
 static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response,
                                       const char *user_input, char *output, int output_size)
 {
-    llm_state_t *state = (llm_state_t *)llm->impl_data;
+    llm_state_t *state = llm->state;
 
     char prompt[NAGI_LLM_MAX_PROMPT_SIZE];
     char context_str[512];
@@ -857,7 +606,7 @@ static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response
     char piece[64];
     llama_token *tokens;
 
-    if (!llamacpp_ready(llm)) return 0;
+    if (!nagi_llm_ready(llm)) return 0;
     if (!game_response || !user_input || !output || output_size <= 0) return 0;
 
     /* Get context if available */
@@ -874,7 +623,7 @@ static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response
              user_input, game_response, context_str);
 
     /* Use rotating sequence IDs */
-    current_seq = ((llm_state_t *)llm->impl_data)->seq_counter++ % 8;
+    current_seq = state->seq_counter++ % 8;
 
     if (llm->config.verbose) {
         printf("\n=== LLM Response Generation ===\n");
@@ -884,13 +633,13 @@ static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response
     }
 
     /* Clear KV cache for this sequence */
-    llama_memory_t mem = llama_get_memory(((llm_state_t *)llm->impl_data)->ctx);
+    llama_memory_t mem = llama_get_memory(state->ctx);
     llama_memory_seq_rm(mem, current_seq, -1, -1);
 
     /* Tokenize prompt */
-    n_tokens = llama_n_ctx(((llm_state_t *)llm->impl_data)->ctx);
+    n_tokens = llama_n_ctx(state->ctx);
     tokens = (llama_token *)malloc(n_tokens * sizeof(llama_token));
-    n_prompt_tokens = llama_tokenize(llama_model_get_vocab(((llm_state_t *)llm->impl_data)->model),
+    n_prompt_tokens = llama_tokenize(llama_model_get_vocab(state->model),
                                      prompt, (int)strlen(prompt),
                                      tokens, n_tokens, true, true);
     if (n_prompt_tokens < 0) {
@@ -916,7 +665,7 @@ static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response
             batch.logits[n_eval - 1] = true;
         }
 
-        if (llama_decode(((llm_state_t *)llm->impl_data)->ctx, batch) != 0) {
+        if (llama_decode(state->ctx, batch) != 0) {
             llama_batch_free(batch);
             free(tokens);
             return 0;
@@ -932,14 +681,14 @@ static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response
     struct llama_batch batch_gen = llama_batch_init(1, 0, 8);
 
     while (response_len < output_size - 1 && gen_count < max_response_tokens) {
-        llama_token new_token = llama_sampler_sample(((llm_state_t *)llm->impl_data)->sampler_creative, ((llm_state_t *)llm->impl_data)->ctx, -1);
-        llama_sampler_accept(((llm_state_t *)llm->impl_data)->sampler_creative, new_token);
+        llama_token new_token = llama_sampler_sample(state->sampler_creative, state->ctx, -1);
+        llama_sampler_accept(state->sampler_creative, new_token);
 
-        if (llama_vocab_is_eog(llama_model_get_vocab(((llm_state_t *)llm->impl_data)->model), new_token)) {
+        if (llama_vocab_is_eog(llama_model_get_vocab(state->model), new_token)) {
             break;
         }
 
-        int piece_len = llama_token_to_piece(llama_model_get_vocab(((llm_state_t *)llm->impl_data)->model),
+        int piece_len = llama_token_to_piece(llama_model_get_vocab(state->model),
                                              new_token, piece, sizeof(piece), 0, true);
         if (piece_len > 0 && response_len + piece_len < output_size - 1) {
             memcpy(output + response_len, piece, piece_len);
@@ -953,7 +702,7 @@ static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response
         batch_gen.seq_id[0][0] = current_seq;
         batch_gen.logits[0] = true;
 
-        if (llama_decode(((llm_state_t *)llm->impl_data)->ctx, batch_gen) != 0) {
+        if (llama_decode(state->ctx, batch_gen) != 0) {
             break;
         }
         gen_count++;
@@ -985,29 +734,6 @@ static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response
 
     return response_len;
 }
-    
-
-/*
- * Wrapper function for set_dictionary vtable entry
- */
-
-static int llamacpp_set_dictionary(nagi_llm_t *llm, const unsigned char *dict_data, size_t dict_size)
-{
-    llm_state_t *state = (llm_state_t *)llm->impl_data;
-    if (!state) {
-        fprintf(stderr, "LLM Parser: Cannot set dictionary - not initialized\n");
-        return 0;
-    }
-    
-    state->dictionary_data = dict_data;
-    state->dictionary_size = dict_size;
-
-    if (llm->config.verbose) {
-        fprintf(stderr, "LLM Parser: Dictionary set (%zu bytes)\n", dict_size);
-    }
-
-    return 1;
-}
 
 /*
  * Create a llama.cpp backend instance
@@ -1032,16 +758,13 @@ nagi_llm_t *nagi_llm_llamacpp_create(void)
     llm->config.use_gpu = 1;
     llm->config.verbose = 0;
     llm->config.mode = NAGI_LLM_MODE_EXTRACTION;
-    
-    // Assign vtable
-    llm->init = llamacpp_init;
-    llm->shutdown = llamacpp_shutdown;
-    llm->ready = llamacpp_ready;
+    llm->config.n_seq_max = 8;
+    llm->config.flash_attn = true;
+
     llm->extract_words = llamacpp_extract_words;
     llm->matches_expected = llamacpp_matches_expected;
     llm->generate_response = llamacpp_generate_response;
-    llm->set_dictionary = llamacpp_set_dictionary;
-    llm->impl_data = NULL; 
+    llm->state = NULL; 
 
     return llm;
 }

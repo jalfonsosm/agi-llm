@@ -5,27 +5,15 @@
  * Performance: 2-5x faster than standard llama.cpp, 4-5x less memory
  */
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <stdarg.h>
-
 #include "nagi_llm_bitnet.h"
 #include "../../include/nagi_llm_context.h"
-
-/* BitNet uses llama.cpp API */
 #include "llama.h"
+#include "llm_utils.h"
 
-/* Basic types */
-typedef unsigned char u8;
-typedef unsigned short u16;
-
-/* Local endian conversion */
-static inline u16 load_be_16(const u8 *ptr) {
-    return (u16)((ptr[0] << 8) | ptr[1]);
-}
-
+//TODO: proper format for bitnet?
 /* Extraction prompt template */
 static const char *EXTRACTION_PROMPT_TEMPLATE =
     "<|user|>\n"
@@ -44,218 +32,8 @@ static const char *EXTRACTION_PROMPT_SIMPLE =
     "%s<|end|>\n"
     "<|assistant|>\n";
 
-/* Internal backend state */
-typedef struct bitnet_state {
-    struct llama_model *model;
-    struct llama_context *ctx;
-    struct llama_sampler *sampler;
-
-    int initialized;
-    char last_error[256];
-    int seq_counter;
-
-    const u8 *dictionary_data;
-    size_t dictionary_size;
-} bitnet_state_t;
-
-static void set_error(bitnet_state_t *state, const char *fmt, ...)
-{
-    va_list args;
-    va_start(args, fmt);
-    if (state) {
-        vsnprintf(state->last_error, sizeof(state->last_error), fmt, args);
-    } else {
-        char buf[256];
-        vsnprintf(buf, sizeof(buf), fmt, args);
-        fprintf(stderr, "BitNet Error: %s\n", buf);
-    }
-    va_end(args);
-}
-
-/* Extract game verbs from dictionary */
-static const char *extract_game_verbs(bitnet_state_t *state)
-{
-    static char verbs_buf[512];
-    const u8 *dict_data;
-    u16 offsets[26];
-    int verb_count;
-    int i, j;
-
-    if (!state || !state->dictionary_data) {
-        return NULL;
-    }
-
-    dict_data = state->dictionary_data;
-
-    /* Read 26 letter offsets (52 bytes header) */
-    for (i = 0; i < 26; i++) {
-        offsets[i] = load_be_16(dict_data + i * 2);
-    }
-
-    /* Extract verbs (first ~15 words are typically verbs in AGI) */
-    verbs_buf[0] = '\0';
-    verb_count = 0;
-
-    for (i = 0; i < 26 && verb_count < 15; i++) {
-        u16 offset = offsets[i];
-        if (offset == 0 || offset >= state->dictionary_size) continue;
-
-        const u8 *word_data = dict_data + offset;
-
-        for (j = 0; j < 100 && verb_count < 15; j++) {
-            u16 word_id = load_be_16(word_data);
-            word_data += 2;
-
-            if (word_id == 0) break;
-
-            u8 word_len = *word_data++;
-            if (word_len == 0 || word_len > 64) break;
-
-            if (verb_count > 0) {
-                strcat(verbs_buf, ", ");
-            }
-
-            strncat(verbs_buf, (const char *)word_data, word_len);
-            word_data += word_len;
-            verb_count++;
-        }
-    }
-
-    return verbs_buf[0] != '\0' ? verbs_buf : NULL;
-}
-
-/*
- * Initialize BitNet backend
- */
-static int bitnet_init(nagi_llm_t *llm, const char *model_path, const nagi_llm_config_t *config)
-{
-    bitnet_state_t *state = NULL;
-
-    struct llama_model_params model_params;
-    struct llama_context_params ctx_params;
-
-    if (state && state->initialized) {
-        fprintf(stderr, "BitNet: Already initialized\n");
-        return 1;
-    }
-
-    if (!state) {
-        state = (bitnet_state_t *)malloc(sizeof(bitnet_state_t));
-        if (!state) {
-            set_error(NULL, "Failed to allocate state");
-            return 0;
-        }
-        memset(state, 0, sizeof(*state));
-    }
-
-    llm->impl_data = state;
-
-    if (config) {
-        memcpy(&llm->config, config, sizeof(nagi_llm_config_t));
-    }
-
-    if (model_path && model_path[0] != '\0') {
-        strncpy(llm->config.model_path, model_path, NAGI_LLM_MAX_MODEL_PATH - 1);
-        llm->config.model_path[NAGI_LLM_MAX_MODEL_PATH - 1] = '\0';
-    }
-
-    if (llm->config.verbose) {
-        fprintf(stderr, "BitNet: Initializing with model: %s\n", llm->config.model_path);
-    }
-
-    /* Initialize llama.cpp backend */
-    llama_backend_init();
-
-    /* Load model with BitNet optimizations */
-    model_params = llama_model_default_params();
-    model_params.use_mmap = true;
-    model_params.use_mlock = false;
-
-    state->model = llama_load_model_from_file(llm->config.model_path, model_params);
-    if (!state->model) {
-        set_error(state, "Failed to load model: %s", llm->config.model_path);
-        free(state);
-        state = NULL;
-        return 0;
-    }
-
-    /* Create context */
-    ctx_params = llama_context_default_params();
-    ctx_params.n_ctx = llm->config.context_size;
-    ctx_params.n_batch = llm->config.batch_size;
-    ctx_params.n_ubatch = llm->config.u_batch_size;
-    ctx_params.n_threads = llm->config.n_threads;
-    ctx_params.n_threads_batch = llm->config.n_threads;
-    ctx_params.flash_attn = false;  /* BitNet works best without flash attention */
-
-    state->ctx = llama_new_context_with_model(state->model, ctx_params);
-    if (!state->ctx) {
-        set_error(state, "Failed to create context");
-        llama_free_model(state->model);
-        free(state);
-        state = NULL;
-        return 0;
-    }
-
-    /* Create sampler (greedy for deterministic extraction) */
-    struct llama_sampler_chain_params sampler_params = llama_sampler_chain_default_params();
-    state->sampler = llama_sampler_chain_init(sampler_params);
-
-    llama_sampler_chain_add(state->sampler,
-                           llama_sampler_init_temp(llm->config.temperature));
-    llama_sampler_chain_add(state->sampler,
-                           llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
-
-    state->initialized = 1;
-    state->seq_counter = 0;
-
-    if (llm->config.verbose) {
-        fprintf(stderr, "BitNet: Initialized successfully\n");
-        fprintf(stderr, "BitNet: Context size: %d, Threads: %d\n",
-                llm->config.context_size, llm->config.n_threads);
-    }
-
-    return 1;
-}
-
-/*
- * Shutdown BitNet backend
- */
-static void bitnet_shutdown(nagi_llm_t *llm)
-{
-    bitnet_state_t *state = (bitnet_state_t *)llm->impl_data;
-
-    if (!state) return;
-
-    if (llm->config.verbose) {
-        fprintf(stderr, "BitNet: Shutting down\n");
-    }
-
-    if (state->sampler) {
-        llama_sampler_free(state->sampler);
-    }
-    if (state->ctx) {
-        llama_free(state->ctx);
-    }
-    if (state->model) {
-        llama_free_model(state->model);
-    }
-
-    llama_backend_free();
-
-    free(state);
-    llm->impl_data = NULL;
-    state = NULL;
-}
-
-/*
- * Check if ready
- */
-static int bitnet_ready(nagi_llm_t *llm)
-{
-    bitnet_state_t *state = (bitnet_state_t *)llm->impl_data;
-    return state && state->initialized;
-}
+//TODO: static const char *RESPONSE_GENERATION_PROMPT =
+// TODO: static const char *SEMANTIC_MATCHING_PROMPT =
 
 /*
  * Extract words from input
@@ -271,9 +49,9 @@ static const char *bitnet_extract_words(nagi_llm_t *llm, const char *input)
     llama_token *tokens;
     int i, k, n_eval;
     int piece_len;
-    bitnet_state_t *state = (bitnet_state_t *)llm->impl_data;
+    llm_state_t *state = llm->state;
 
-    if (!bitnet_ready(llm)) return input;
+    if (!nagi_llm_ready(llm)) return input;
     if (!input || input[0] == '\0') return input;
 
     /* Build prompt */
@@ -294,6 +72,7 @@ static const char *bitnet_extract_words(nagi_llm_t *llm, const char *input)
     /* Tokenize */
     n_tokens = llama_n_ctx(state->ctx);
     tokens = (llama_token *)malloc(n_tokens * sizeof(llama_token));
+    printf("BitNet: Tokenizing prompt: %s\n", prompt); fflush(stdout);
     n_prompt_tokens = llama_tokenize(state->model,
                                      prompt, (int)strlen(prompt),
                                      tokens, n_tokens, true, true);
@@ -396,7 +175,7 @@ static const char *bitnet_extract_words(nagi_llm_t *llm, const char *input)
 static int bitnet_matches_expected(nagi_llm_t *llm, const char *input,
                                    const int *expected_word_ids, int expected_count)
 {
-    bitnet_state_t *state = (bitnet_state_t *)llm->impl_data;
+    llm_state_t *state = llm->state;
     const char *extracted;
     char *extracted_copy;
     char *token;
@@ -404,7 +183,7 @@ static int bitnet_matches_expected(nagi_llm_t *llm, const char *input,
     int match_count = 0;
     const u8 *dict_data;
     
-    if (!bitnet_ready(llm) || !input || !expected_word_ids || expected_count <= 0) {
+    if (!nagi_llm_ready(llm) || !input || !expected_word_ids || expected_count <= 0) {
         return 0;
     }
 
@@ -419,6 +198,7 @@ static int bitnet_matches_expected(nagi_llm_t *llm, const char *input,
     if (!state->dictionary_data) {
         return 0;
     }
+    
     dict_data = state->dictionary_data;
 
     /* Make a copy of extracted string to tokenize */
@@ -489,12 +269,13 @@ static int bitnet_matches_expected(nagi_llm_t *llm, const char *input,
 /*
  * Generate response (simplified for BitNet)
  */
+ // TODO:
 static int bitnet_generate_response(nagi_llm_t *llm, const char *game_response,
                                    const char *user_input, char *output, int output_size)
 {
-    bitnet_state_t *state = (bitnet_state_t *)llm->impl_data;
+    llm_state_t *state = llm->state;
 
-    if (!bitnet_ready(llm)) return 0;
+    if (!nagi_llm_ready(llm)) return 0;
     if (!game_response || !output || output_size <= 0) return 0;
 
     /* BitNet optimized for extraction, not generation - just return game response */
@@ -502,28 +283,6 @@ static int bitnet_generate_response(nagi_llm_t *llm, const char *game_response,
     output[output_size - 1] = '\0';
 
     return (int)strlen(output);
-}
-
-/*
- * Set dictionary
- */
-static int bitnet_set_dictionary(nagi_llm_t *llm, const unsigned char *dictionary, size_t size)
-{
-    bitnet_state_t *state = (bitnet_state_t *)llm->impl_data;
-
-    if (!state) {
-        fprintf(stderr, "BitNet: Cannot set dictionary - not initialized\n");
-        return 0;
-    }
-
-    state->dictionary_data = dictionary;
-    state->dictionary_size = size;
-
-    if (llm->config.verbose) {
-        fprintf(stderr, "BitNet: Dictionary set (%zu bytes)\n", size);
-    }
-
-    return 1;
 }
 
 /*
@@ -538,16 +297,11 @@ nagi_llm_t *nagi_llm_bitnet_create(void)
         return NULL;
     }
 
-    /* Set up vtable */
     llm->backend = NAGI_LLM_BACKEND_BITNET;
-    llm->init = bitnet_init;
-    llm->shutdown = bitnet_shutdown;
-    llm->ready = bitnet_ready;
     llm->extract_words = bitnet_extract_words;
     llm->matches_expected = bitnet_matches_expected;
     llm->generate_response = bitnet_generate_response;
-    llm->set_dictionary = bitnet_set_dictionary;
-    llm->impl_data = NULL;
+    llm->state = NULL;
 
     /* Set default config for BitNet backend */
     llm->config.backend = NAGI_LLM_BACKEND_BITNET;
@@ -562,6 +316,8 @@ nagi_llm_t *nagi_llm_bitnet_create(void)
     llm->config.use_gpu = 0;  /* BitNet is CPU-optimized */
     llm->config.verbose = 1;
     llm->config.mode = NAGI_LLM_MODE_EXTRACTION;
+    llm->config.flash_attn = false;  /* BitNet works best without flash attention */
+    llm->config.n_seq_max = 1; /* TODO: is this the correct default? */
 
     return llm;
 }

@@ -19,6 +19,11 @@
 extern "C" {
 #endif
 
+/* Basic types */
+typedef unsigned char u8;
+typedef unsigned short u16;
+typedef unsigned int u32;
+
 /* Configuration constants */
 #define NAGI_LLM_MAX_MODEL_PATH 512
 #define NAGI_LLM_MAX_PROMPT_SIZE 4096
@@ -64,8 +69,32 @@ typedef struct {
     int max_tokens;
     int use_gpu;                        /* 1 to use GPU acceleration (for local backends) */
     int verbose;                        /* 1 for verbose output */
-    nagi_llm_mode_t mode;              /* LLM operation mode */
+    nagi_llm_mode_t mode;               /* LLM operation mode */
+    // void *impl_data;                 /* Backend-specific data */
+    int flash_attn;
+    int n_seq_max;
+
 } nagi_llm_config_t;
+
+/* backend state */
+typedef struct llm_state {
+    /* For real LLM backend */
+    struct llama_model *model;
+    struct llama_context *ctx;
+    struct llama_sampler *sampler;           /* For extraction/semantic (deterministic) */
+    struct llama_sampler *sampler_creative;  /* For response generation (creative) */
+
+    /* Common fields */
+    int initialized;
+    char last_error[256];
+
+    /* Sequence counter for rotating through sequences */
+    int seq_counter;
+
+    /* Game dictionary (words.tok data) - passed from game engine */
+    const u8 *dictionary_data;
+    size_t dictionary_size;
+} llm_state_t;
 
 /*
  * Forward declaration of abstract LLM interface
@@ -76,39 +105,13 @@ typedef struct nagi_llm nagi_llm_t;
  * Abstract LLM interface - function pointer table (vtable)
  */
 struct nagi_llm {
-    /* Backend-specific data */
-    void *impl_data;
+    llm_state_t *state;
 
     /* Backend type */
     nagi_llm_backend_t backend;
 
     /* Configuration */
     nagi_llm_config_t config;
-
-    /*
-     * Initialize the LLM backend
-     *
-     * @param llm: LLM instance
-     * @param model_path: Path to model file or API configuration
-     * @param config: Configuration (NULL for defaults)
-     * @return: 1 on success, 0 on failure
-     */
-    int (*init)(nagi_llm_t *llm, const char *model_path, const nagi_llm_config_t *config);
-
-    /*
-     * Shutdown the LLM backend
-     *
-     * @param llm: LLM instance
-     */
-    void (*shutdown)(nagi_llm_t *llm);
-
-    /*
-     * Check if LLM is initialized and ready
-     *
-     * @param llm: LLM instance
-     * @return: 1 if ready, 0 otherwise
-     */
-    int (*ready)(nagi_llm_t *llm);
 
     /*
      * Extract verb and noun from user input (any language) to English words
@@ -142,16 +145,6 @@ struct nagi_llm {
      */
     int (*generate_response)(nagi_llm_t *llm, const char *game_response,
                             const char *user_input, char *output, int output_size);
-
-    /*
-     * Set dictionary data for the LLM backend
-     *
-     * @param llm: LLM instance
-     * @param dictionary: Pointer to dictionary data (e.g., words.tok)
-     * @param size: Size of dictionary data in bytes
-     * @return: 1 on success, 0 on failure
-     */
-    int (*set_dictionary)(nagi_llm_t *llm, const unsigned char *dictionary, size_t size);
 };
 
 /*
@@ -170,41 +163,25 @@ nagi_llm_t *nagi_llm_create(nagi_llm_backend_t backend);
 void nagi_llm_destroy(nagi_llm_t *llm);
 
 /*
- * Convenience functions that delegate to the vtable
+ * Initialize the LLM backend
  */
+int nagi_llm_init(nagi_llm_t *llm, 
+                const char *model_path,
+                const nagi_llm_config_t *config);
 
-static inline int nagi_llm_init(nagi_llm_t *llm, const char *model_path,
-                                const nagi_llm_config_t *config) {
-    return llm && llm->init ? llm->init(llm, model_path, config) : 0;
-}
+void nagi_llm_shutdown(nagi_llm_t *llm);
 
-static inline void nagi_llm_shutdown(nagi_llm_t *llm) {
-    if (llm && llm->shutdown) {
-        llm->shutdown(llm);
-    }
-}
+int nagi_llm_ready(nagi_llm_t *llm);
 
-static inline int nagi_llm_ready(nagi_llm_t *llm) {
-    return llm && llm->ready ? llm->ready(llm) : 0;
-}
+int nagi_llm_set_dictionary(nagi_llm_t *llm, const unsigned char *dictionary, size_t size);
 
-static inline const char *nagi_llm_extract_words(nagi_llm_t *llm, const char *input) {
-    return llm && llm->extract_words ? llm->extract_words(llm, input) : NULL;
-}
+const char *nagi_llm_extract_words(nagi_llm_t *llm, const char *input);
 
-static inline int nagi_llm_matches_expected(nagi_llm_t *llm, const char *input,
-                                            const int *expected_word_ids, int expected_count) {
-    return llm && llm->matches_expected ? llm->matches_expected(llm, input, expected_word_ids, expected_count) : 0;
-}
+int nagi_llm_matches_expected(nagi_llm_t *llm, const char *input,
+                                    const int *expected_word_ids, int expected_count);
 
-static inline int nagi_llm_generate_response(nagi_llm_t *llm, const char *game_response,
-                                              const char *user_input, char *output, int output_size) {
-    return llm && llm->generate_response ? llm->generate_response(llm, game_response, user_input, output, output_size) : 0;
-}
-
-static inline int nagi_llm_set_dictionary(nagi_llm_t *llm, const unsigned char *dictionary, size_t size) {
-    return llm && llm->set_dictionary ? llm->set_dictionary(llm, dictionary, size) : 0;
-}
+int nagi_llm_generate_response(nagi_llm_t *llm, const char *game_response,
+                                      const char *user_input, char *output, int output_size);
 
 #ifdef __cplusplus
 }
