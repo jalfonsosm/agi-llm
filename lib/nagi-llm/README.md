@@ -1,159 +1,139 @@
 # NAGI-LLM: Abstract LLM Interface Library
 
-NAGI-LLM is a modular, backend-agnostic library for integrating Large Language Models into the NAGI AGI game engine. It provides a unified interface for multiple LLM backends, allowing you to choose the best model for your needs.
+NAGI-LLM is a modular, backend-agnostic library for integrating Large Language Models into the NAGI AGI game engine. It provides a unified interface for multiple LLM backends, enabling natural language understanding in classic adventure games.
 
 ## Features
 
 - **Abstract Interface**: Single API works with all backends
-- **Multiple Backends**: Support for local and cloud LLMs
+- **Multiple Backends**: Support for local and cloud LLMs  
 - **Modular Design**: Easy to add new backends
-- **Zero Dependencies**: Backends are completely independent
-- **Type-Safe**: C interface with clear function signatures
+- **Backend-Specific Optimizations**: Each backend uses optimal prompt formats and APIs
+- **Shared Utilities**: Common dictionary parsing and verb extraction
+- **Type-Safe**: Clean C interface with clear function signatures
 
 ## Supported Backends
 
-### 1. llama.cpp Backend (IMPLEMENTED ✅)
+| Backend | Status | Speed | Memory | GPU | Offline | Quality |
+|---------|--------|-------|--------|-----|---------|---------|
+| **llama.cpp** | ✅ Production | Fast | ~4GB | Optional | ✅ Yes | High |
+| **BitNet** | ✅ Production | Ultra Fast | ~1.1GB | No (CPU-only) | ✅ Yes | Good |
+| **Cloud API** | 📋 Planned | Network-dependent | Minimal | N/A | ❌ No | Excellent |
 
-High-performance local inference using llama.cpp.
+### 1. llama.cpp Backend ✅
+
+High-performance local inference using llama.cpp with full GPU acceleration.
 
 **Features:**
 - Metal GPU acceleration on macOS
 - GGUF model support
 - Streaming generation
-- KV cache management
+- Advanced KV cache management
+- Phi-3 chat template format
 
-**Models Supported:**
-- Phi-3-mini (default)
-- Llama 3.x
-- Mistral
-- Any GGUF model
+**Default Model:** Phi-3-mini-4k-instruct-Q4_K_M.gguf (2.3GB)
 
-**Enable:**
-```cmake
--DNAGI_LLM_ENABLE_LLAMACPP=ON
-```
+**Enable:** `-DNAGI_LLM_ENABLE_LLAMACPP=ON`
 
-### 2. BitNet Backend (STUB ⏳)
+### 2. BitNet Backend ✅
 
-Ultra-efficient 1.58-bit quantized models using BitNet.cpp.
+Ultra-efficient 1.58-bit quantized models using Microsoft's BitNet.cpp.
 
 **Features:**
-- Extremely fast CPU inference
-- Minimal memory usage
+- Extremely fast CPU inference (2-5x faster than llama.cpp)
+- Minimal memory usage (4-5x less than standard models)
 - No GPU required
-- 1.58-bit quantization
+- 1.58-bit ternary quantization
+- Llama 3 chat template format
+- Optimized for low-end hardware
 
-**Models Supported:**
-- BitNet models (when available)
+**Default Model:** BitNet-b1.58-2B-4T (1.1GB, 3.91 BPW)
 
-**Enable:**
-```cmake
--DNAGI_LLM_ENABLE_BITNET=ON
-```
+**Performance:**
+- Inference: ~10-20ms per token (CPU-only)
+- Memory: ~1.1GB model + ~150MB KV cache
+- Quality: 80-90% of full precision models
 
-**Status:** Stub implementation - ready for BitNet.cpp integration
+**Enable:** `-DNAGI_LLM_ENABLE_BITNET=ON`
 
-### 3. Cloud API Backend (PLANNED 📋)
-
-Connect to powerful cloud LLMs via API.
-
-**Features:**
-- Claude (Anthropic)
-- GPT-4 (OpenAI)
-- Gemini (Google)
-- Generic API support
-
-**Enable:**
-```cmake
--DNAGI_LLM_ENABLE_CLOUD_API=ON
-```
+### 3. Cloud API Backend 📋
 
 **Status:** Planned for future release
 
-## Usage Example
+## Quick Start
 
 ```c
 #include "nagi_llm.h"
 
-/* Create LLM instance */
-nagi_llm_t *llm = nagi_llm_create(NAGI_LLM_BACKEND_LLAMACPP);
+// Create LLM instance
+nagi_llm_t *llm = nagi_llm_create(NAGI_LLM_BACKEND_BITNET);
 
-/* Configure */
+// Configure
 nagi_llm_config_t config = {
-    .backend = NAGI_LLM_BACKEND_LLAMACPP,
-    .context_size = 4096,
+    .backend = NAGI_LLM_BACKEND_BITNET,
+    .context_size = 2048,
     .temperature = 0.0f,
     .mode = NAGI_LLM_MODE_EXTRACTION
 };
 
-/* Initialize */
+// Initialize
 nagi_llm_init(llm, "path/to/model.gguf", &config);
 
-/* Set game dictionary */
+// Set game dictionary
 nagi_llm_set_dictionary(llm, dictionary_data, dictionary_size);
 
-/* Use it */
+// Extract words (translate to English)
 const char *result = nagi_llm_extract_words(llm, "mira el castillo");
-/* result: "look castle" */
+// result: "look castle"
 
-/* Cleanup */
+// Semantic matching
+int word_ids[] = {10, 25};  // "look", "castle"
+int matches = nagi_llm_matches_expected(llm, "mira la fortaleza", word_ids, 2);
+// matches: 1 (semantically equivalent)
+
+// Generate response (translate to user's language)
+char response[256];
+nagi_llm_generate_response(llm, "You see a castle.", "mira", response, 256);
+// response: "Ves un castillo."
+
+// Cleanup
 nagi_llm_destroy(llm);
 ```
-
-## Switching Backends
-
-Simply change the backend type when creating:
-
-```c
-/* Use llama.cpp */
-nagi_llm_t *llm1 = nagi_llm_create(NAGI_LLM_BACKEND_LLAMACPP);
-
-/* Use BitNet */
-nagi_llm_t *llm2 = nagi_llm_create(NAGI_LLM_BACKEND_BITNET);
-
-/* Use Cloud API */
-nagi_llm_t *llm3 = nagi_llm_create(NAGI_LLM_BACKEND_CLOUD_API);
-```
-
-The rest of the code remains identical!
 
 ## LLM Operation Modes
 
 ### EXTRACTION Mode (Fast)
 Extracts verb+noun from user input in any language to English.
-```c
-config.mode = NAGI_LLM_MODE_EXTRACTION;
-```
+- **Latency:** ~50-100ms (llamacpp), ~10-20ms (BitNet)
 
 ### SEMANTIC Mode (Precise)
 Checks if user input semantically matches expected command.
-```c
-config.mode = NAGI_LLM_MODE_SEMANTIC;
-```
+- **Latency:** ~100-200ms (llamacpp), ~20-40ms (BitNet)
 
 ### DISABLED Mode
-Falls back to original parser only.
-```c
-config.mode = NAGI_LLM_MODE_DISABLED;
-```
+Falls back to original text parser only.
 
 ## Building
 
-### With llama.cpp only (default)
+### Prerequisites
+- CMake 3.14+
+- C11 compiler
+- For llamacpp: Metal (macOS) or CUDA (Linux/Windows)
+- For BitNet: LLVM 18 (macOS ARM64)
+
+### Build Commands
+
 ```bash
+# With llama.cpp
 cmake -DNAGI_LLM_ENABLE_LLAMACPP=ON ..
-```
+make
 
-### With BitNet
-```bash
+# With BitNet
+cmake -DNAGI_LLM_ENABLE_BITNET=ON ..
+make
+
+# With both
 cmake -DNAGI_LLM_ENABLE_LLAMACPP=ON -DNAGI_LLM_ENABLE_BITNET=ON ..
-```
-
-### With all backends
-```bash
-cmake -DNAGI_LLM_ENABLE_LLAMACPP=ON \
-      -DNAGI_LLM_ENABLE_BITNET=ON \
-      -DNAGI_LLM_ENABLE_CLOUD_API=ON ..
+make
 ```
 
 ## Architecture
@@ -162,50 +142,15 @@ cmake -DNAGI_LLM_ENABLE_LLAMACPP=ON \
 lib/nagi-llm/
 ├── include/
 │   ├── nagi_llm.h          # Public API
-│   └── nagi_llm_context.h  # Context management
+│   ├── nagi_llm_context.h  # Context management
+│   └── llm_utils.h         # Shared utilities
 ├── src/
-│   ├── nagi_llm.c          # Factory and interface
-│   └── nagi_llm_context.c  # Game context tracking
+│   ├── nagi_llm.c          # Factory and shared extraction
+│   ├── nagi_llm_context.c  # Game context tracking
+│   └── llm_utils.c         # Dictionary parsing, verb extraction
 └── backends/
     ├── llamacpp/           # llama.cpp implementation
-    │   ├── nagi_llm_llamacpp.h
     │   └── nagi_llm_llamacpp.c
-    ├── bitnet/             # BitNet.cpp implementation
-    │   ├── nagi_llm_bitnet.h
-    │   └── nagi_llm_bitnet.c
-    └── cloudapi/           # Cloud API implementation (future)
-        ├── nagi_llm_cloudapi.h
-        └── nagi_llm_cloudapi.c
+    └── bitnet/             # BitNet.cpp implementation
+        └── nagi_llm_bitnet.c
 ```
-
-## Adding a New Backend
-
-1. Create backend directory: `backends/mybackend/`
-2. Create header: `nagi_llm_mybackend.h`
-3. Implement vtable functions in `nagi_llm_mybackend.c`:
-   - `mybackend_init()`
-   - `mybackend_shutdown()`
-   - `mybackend_ready()`
-   - `mybackend_extract_words()`
-   - `mybackend_matches_expected()`
-   - `mybackend_generate_response()`
-   - `mybackend_set_dictionary()`
-4. Create factory: `nagi_llm_mybackend_create()`
-5. Register in `src/nagi_llm.c`
-6. Add to `CMakeLists.txt`
-
-Done! Your backend is now available through the unified API.
-
-## License
-
-Part of the NAGI project. See main repository for license information.
-
-## Contributing
-
-Contributions welcome! Especially:
-- BitNet.cpp integration
-- Cloud API implementation
-- New backend types
-- Performance improvements
-
-See the main NAGI repository for contribution guidelines.

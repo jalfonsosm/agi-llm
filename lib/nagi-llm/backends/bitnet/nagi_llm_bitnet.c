@@ -453,19 +453,19 @@ nagi_llm_t *nagi_llm_bitnet_create(void)
 
     /* Set default config for BitNet backend */
     llm->config.backend = NAGI_LLM_BACKEND_BITNET;
-    llm->config.context_size = 2048;  /* Smaller for BitNet efficiency */
-    llm->config.batch_size = 512;
+    llm->config.context_size = NAGI_LLM_DEFAULT_CONTEXT_SIZE;
+    llm->config.batch_size = NAGI_LLM_DEFAULT_BATCH_SIZE;
     llm->config.u_batch_size = NAGI_LLM_DEFAULT_U_BATCH_SIZE;
-    llm->config.n_threads = 2;  /* BitNet optimized for fewer threads */
+    llm->config.n_threads = 6;
     llm->config.temperature = 0.0f;
     llm->config.top_p = 0.9f;
     llm->config.top_k = 1;
     llm->config.max_tokens = 5;
-    llm->config.use_gpu = 0;  /* BitNet is CPU-optimized */
-    llm->config.verbose = 1;
+    llm->config.use_gpu = 0;
+    llm->config.verbose = 0;
     llm->config.mode = NAGI_LLM_MODE_EXTRACTION;
     llm->config.flash_attn = false;  /* BitNet works best without flash attention */
-    llm->config.n_seq_max = 1; /* BitNet uses simpler KV cache */
+    llm->config.n_seq_max = 1; //8;
 
     return llm;
 }
