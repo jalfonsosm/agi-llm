@@ -491,7 +491,6 @@ nagi_llm_t *nagi_llm_llamacpp_create(void)
     llm->config.mode = NAGI_LLM_MODE_EXTRACTION;
     llm->config.n_seq_max = 8;
     llm->config.flash_attn = true;
-
     llm->matches_expected = llamacpp_matches_expected;
     llm->generate_response = llamacpp_generate_response;
     llm->state = NULL; 

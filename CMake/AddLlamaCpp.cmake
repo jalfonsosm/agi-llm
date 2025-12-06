@@ -6,21 +6,22 @@ include(ExternalProject)
 if(NAGI_LLM_ENABLE_LLAMACPP)
     set(LLAMA_PREFIX ${CMAKE_BINARY_DIR}/_deps/llama)
 
+    # Performance optimization flags
+    set(LLAMA_PERF_FLAGS "-O3 -march=native -ffast-math -funroll-loops")
+    
     set(LLAMA_CMAKE_FLAGS
         -DLLAMA_BUILD_SHARED=OFF
         -DLLAMA_STATIC=ON
         -DBUILD_SHARED_LIBS=OFF
         -DLLAMA_ALL_WARNINGS=OFF
         -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-        -DLLAMA_NATIVE=OFF
-        -DLLAMA_AVX=OFF
-        -DLLAMA_AVX2=OFF
-        -DLLAMA_AVX512=OFF
-        -DLLAMA_FMA=OFF
-        -DLLAMA_F16C=OFF
-        -DLLAMA_METAL=ON
+        # Enable native CPU optimizations (auto-detect AVX/AVX2/AVX512)
+        -DLLAMA_NATIVE=ON
         -DLLAMA_ACCELERATE=ON
         -DLLAMA_FLASH_ATTN=ON
+        # Performance compiler flags
+        -DCMAKE_C_FLAGS_RELEASE=${LLAMA_PERF_FLAGS}
+        -DCMAKE_CXX_FLAGS_RELEASE=${LLAMA_PERF_FLAGS}
     )
 
     if(APPLE)
