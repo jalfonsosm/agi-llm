@@ -5,11 +5,6 @@ include(ExternalProject)
 if(NAGI_LLM_ENABLE_BITNET)
     set(BITNET_PREFIX ${CMAKE_BINARY_DIR}/_deps/bitnet)
 
-    # if(APPLE)
-    #     set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "" FORCE)
-    #     message(STATUS "BitNet: Forcing arm64 architecture for Apple Silicon")
-    # endif()
-
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)")
         set(BITNET_ARM_TL1 ON)
         set(BITNET_X86_TL2 OFF)
@@ -78,29 +73,20 @@ if(NAGI_LLM_ENABLE_BITNET)
     )
 
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)")
-    # if(APPLE)
-        # if(NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
-        #     execute_process(COMMAND sw_vers -productVersion
-        #         OUTPUT_VARIABLE _swvers OUTPUT_STRIP_TRAILING_WHITESPACE)
-        #     string(REGEX MATCH "^[0-9]+\.[0-9]+" _mac_ver "${_swvers}")
-        #     if(_mac_ver)
-        #         set(CMAKE_OSX_DEPLOYMENT_TARGET "${_mac_ver}" CACHE STRING "macOS deployment target" FORCE)
-        #     endif()
-        # endif()
-
-        # if(CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS "10.15")
-        #     set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "macOS deployment target" FORCE)
-        # endif()
-
         list(APPEND BITNET_CMAKE_FLAGS
-            # -DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}
             -DCMAKE_OSX_ARCHITECTURES=arm64
         )
     endif()
 
 
+    # Common patch to add GGUF model support to setup_env.py
+    set(BITNET_COMMON_PATCH
+        COMMAND ${CMAKE_COMMAND} -E echo "BitNet: Patching setup_env.py to support GGUF model download..."
+        COMMAND python3 "${CMAKE_SOURCE_DIR}/CMake/patch_bitnet.py" "<SOURCE_DIR>/setup_env.py"
+    )
+
     if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
-        set(BITNET_PATCH_CMD 
+        set(BITNET_PLATFORM_PATCH 
             # First, backup the original file
             COMMAND ${CMAKE_COMMAND} -E copy <SOURCE_DIR>/setup_env.py <SOURCE_DIR>/setup_env.py.backup
             # Apply Apple Silicon fixes
@@ -109,30 +95,29 @@ if(NAGI_LLM_ENABLE_BITNET)
                 -e "s/\\\"-DCMAKE_CXX_COMPILER=clang..\\\"/\\\"-DCMAKE_CXX_COMPILER=${BITNET_CXX_COMPILER}\\\", \\\"-DCMAKE_CXX_FLAGS=${BITNET_OPT_FLAGS}\\\", \\\"-DCMAKE_CXX_FLAGS_RELEASE=${BITNET_OPT_FLAGS}\\\"/g"
                 -e "s/, \\\"--config\\\", \\\"Release\\\"//g"
                 <SOURCE_DIR>/setup_env.py
-            # Add ARM TL2 optimization flag
-            # Removed problematic sed command that introduced makefile syntax errors
-            # The required flags are now set via BITNET_OPT_FLAGS and CMake variables.
         )
         message(STATUS "BitNet: Apple Silicon patch will be applied to setup_env.py")
     elseif(CMAKE_GENERATOR STREQUAL "Xcode" OR CMAKE_GENERATOR STREQUAL "Visual Studio 17 2022")
-        set(BITNET_PATCH_CMD "")
-        message(STATUS "BitNet: Multi-config generator detected, no patch needed")
+        set(BITNET_PLATFORM_PATCH "")
+        message(STATUS "BitNet: Multi-config generator detected, no platform patch needed")
     elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        set(BITNET_PATCH_CMD "")
-        message(STATUS "BitNet: Debug mode, no patch needed; using -O2 flags via BITNET_OPT_FLAGS")
+        set(BITNET_PLATFORM_PATCH "")
+        message(STATUS "BitNet: Debug mode, no platform patch needed; using -O2 flags via BITNET_OPT_FLAGS")
     else()
-        set(BITNET_PATCH_CMD "")
-        message(STATUS "BitNet: Release mode with Makefiles, no patch needed")
+        set(BITNET_PLATFORM_PATCH "")
+        message(STATUS "BitNet: Release mode with Makefiles, no platform patch needed")
     endif()
+
+    set(BITNET_PATCH_CMD ${BITNET_COMMON_PATCH} ${BITNET_PLATFORM_PATCH})
 
     # Select BitNet model for setup (needed to generate kernels)
     # set(BITNET_HF_MODEL "1bitLLM/bitnet_b1_58-large")
-    set(BITNET_HF_MODEL "microsoft/BitNet-b1.58-2B-4T")
+    set(BITNET_HF_MODEL "microsoft/BitNet-b1.58-2B-4T-gguf")
     # set(BITNET_HF_MODEL "tiiuae/Falcon3-1B-Instruct-1.58bit")
     # set(BITNET_HF_MODEL "1bitLLM/bitnet_b1_58-3B")
     
     # Note: setup_env.py uses the model name (without user/org) as the directory name
-    set(MODEL_URL "https://huggingface.co/microsoft/bitnet-b1.58-2B-4T-gguf/resolve/main/ggml-model-i2_s.gguf")        
+    set(MODEL_URL "https://huggingface.co/microsoft/BitNet-b1.58-2B-4T-gguf/resolve/main/ggml-model-i2_s.gguf")        
     message(STATUS "LLM Model: BitNet 1.58-bit (2B parameters)")
 
     ExternalProject_Add(bitnet_cpp
@@ -168,20 +153,10 @@ if(NAGI_LLM_ENABLE_BITNET)
     # BitNet libraries (uses llama.cpp libs with BitNet kernels compiled in)
     set(BITNET_LLAMA_LIB ${BITNET_BUILD_DIR}/3rdparty/llama.cpp/src/libllama.a)
     set(BITNET_GGML_LIB ${BITNET_BUILD_DIR}/3rdparty/llama.cpp/ggml/src/libggml.a)
-    # set(BITNET_GGML_BASE_LIB ${BITNET_BUILD_DIR}/3rdparty/llama.cpp/ggml/src/libggml-base.a)
-    # set(BITNET_GGML_CPU_LIB ${BITNET_BUILD_DIR}/3rdparty/llama.cpp/ggml/src/libggml-cpu.a)
-
-    # BitNet-specific libraries are compiled into libggml.a
-    # set(BITNET_LUT_LIB ${BITNET_BUILD_DIR}/src/libggml-bitnet-lut.a)
-    # set(BITNET_MAD_LIB ${BITNET_BUILD_DIR}/src/libggml-bitnet-mad.a)
 
     set(NAGI_BITNET_LIBS
         ${BITNET_LLAMA_LIB}
-        # ${BITNET_LUT_LIB}
-        # ${BITNET_MAD_LIB}
         ${BITNET_GGML_LIB}
-        # ${BITNET_GGML_BASE_LIB}
-        # ${BITNET_GGML_CPU_LIB}
     )
 
     # Add system frameworks on macOS
