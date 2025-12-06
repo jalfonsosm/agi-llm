@@ -6,7 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
-
+#include <ctype.h>
+#include "../include/llm_utils.h"
 #include "llama.h"
 
 /* Forward declarations for backend constructors */
@@ -163,7 +164,11 @@ int nagi_llm_init(nagi_llm_t *llm,
     ctx_params.n_ubatch = llm->config.u_batch_size;
     ctx_params.n_threads = llm->config.n_threads;
     ctx_params.n_threads_batch = llm->config.n_threads;
-    // ctx_params.flash_attn = llm->config.flash_attn;
+        
+#ifdef NAGI_LLM_HAS_BITNET
+    ctx_params.flash_attn = llm->config.flash_attn;
+#endif
+    
     ctx_params.n_seq_max = llm->config.n_seq_max;
 
     state->ctx = llama_new_context_with_model(state->model, ctx_params);
@@ -267,8 +272,180 @@ int nagi_llm_set_dictionary(nagi_llm_t *llm, const unsigned char *dictionary, si
     return 1;
 }
 
+/*
+ * Extract verb and noun from user input (EXTRACTION mode)
+ * Translates "mira el castillo" -> "look castle"
+ * Much faster than semantic matching, uses shorter prompt
+ * Returns static buffer with extracted English words
+ */
 const char *nagi_llm_extract_words(nagi_llm_t *llm, const char *input) {
-    return llm && llm->extract_words ? llm->extract_words(llm, input) : NULL;
+    static char response_buf[NAGI_LLM_MAX_RESPONSE_SIZE];
+    char prompt[NAGI_LLM_MAX_PROMPT_SIZE];
+    char piece[64];
+    int n_tokens, n_prompt_tokens;
+    int current_seq;
+    int response_len, gen_count, max_extract_tokens;
+    llama_token *tokens;
+
+    if (!nagi_llm_ready(llm)) return input;
+    if (!input || input[0] == '\0') return input;
+
+    /* Extract game verbs for vocabulary hint */
+    const char *verbs = extract_game_verbs(llm);
+
+    /* Build extraction prompt with vocabulary context */
+    if (verbs && verbs[0] != '\0' && llm->extraction_prompt_template) {
+        /* Use template with verb vocabulary */
+        snprintf(prompt, sizeof(prompt), llm->extraction_prompt_template,
+                 verbs, verbs, verbs, input);
+    } else if (llm->extraction_prompt_simple) {
+        /* Fallback to simple prompt */
+        snprintf(prompt, sizeof(prompt), llm->extraction_prompt_simple, input);
+    } else {
+        /* No prompts available - should not happen */
+        return input;
+    }
+
+    llm_state_t *state = llm->state;
+
+    /* Use rotating sequence IDs to avoid KV cache conflicts */
+    current_seq = (state->seq_counter++) % 8;
+
+    if (llm->config.verbose) {
+        printf("\n=== LLM Extraction ===\n");
+        printf("Input: \"%s\"\n", input);
+        printf("Using sequence ID: %d\n", current_seq);
+    }
+
+    /* Clear KV cache for this sequence */
+#ifdef NAGI_LLM_HAS_BITNET
+    llama_kv_cache_seq_rm(state->ctx, current_seq, -1, -1);
+#else
+    llama_memory_t mem = llama_get_memory(state->ctx);
+    llama_memory_seq_rm(mem, current_seq, -1, -1);
+#endif
+
+    /* Tokenize prompt */
+    n_tokens = llama_n_ctx(state->ctx);
+    tokens = (llama_token *)malloc(n_tokens * sizeof(llama_token));
+#ifdef NAGI_LLM_HAS_BITNET
+    n_prompt_tokens = llama_tokenize(state->model,
+                                     prompt, (int)strlen(prompt),
+                                     tokens, n_tokens, true, true);
+#else
+    n_prompt_tokens = llama_tokenize(llama_model_get_vocab(state->model),
+                                     prompt, (int)strlen(prompt),
+                                     tokens, n_tokens, true, true);
+#endif
+    if (n_prompt_tokens < 0) {
+        free(tokens);
+        return input;
+    }
+
+    /* Process prompt in batches */
+    struct llama_batch batch = llama_batch_init(llm->config.batch_size, 0, 8);
+    for (int i = 0; i < n_prompt_tokens; i += llm->config.batch_size) {
+        int n_eval = n_prompt_tokens - i;
+        if (n_eval > llm->config.batch_size) n_eval = llm->config.batch_size;
+
+        batch.n_tokens = n_eval;
+        for (int k = 0; k < n_eval; k++) {
+            batch.token[k] = tokens[i + k];
+            batch.pos[k] = i + k;
+            batch.n_seq_id[k] = 1;
+            batch.seq_id[k][0] = current_seq;
+            batch.logits[k] = false;
+        }
+        if (i + n_eval == n_prompt_tokens) {
+            batch.logits[n_eval - 1] = true;
+        }
+
+        if (llama_decode(state->ctx, batch) != 0) {
+            llama_batch_free(batch);
+            free(tokens);
+            return input;
+        }
+    }
+    llama_batch_free(batch);
+    free(tokens);
+
+    /* Generate response (extract English words) */
+    response_len = 0;
+    gen_count = 0;
+    max_extract_tokens = 10;  // Short limit - we only need "verb noun"
+    struct llama_batch batch_gen = llama_batch_init(1, 0, 8);
+
+    while (response_len < (int)sizeof(response_buf) - 1 && gen_count < max_extract_tokens) {
+        llama_token new_token = llama_sampler_sample(state->sampler, state->ctx, -1);
+        llama_sampler_accept(state->sampler, new_token);
+
+#ifdef NAGI_LLM_HAS_BITNET
+        if (llama_token_is_eog(state->model, new_token)) {
+#else
+        if (llama_vocab_is_eog(llama_model_get_vocab(state->model), new_token)) {
+#endif
+            break;
+        }
+
+#ifdef NAGI_LLM_HAS_BITNET
+        int piece_len = llama_token_to_piece(state->model,
+                                             new_token, piece, sizeof(piece), 0, true);
+#else
+        int piece_len = llama_token_to_piece(llama_model_get_vocab(state->model),
+                                             new_token, piece, sizeof(piece), 0, true);
+#endif
+        if (piece_len > 0 && response_len + piece_len < (int)sizeof(response_buf) - 1) {
+            memcpy(response_buf + response_len, piece, piece_len);
+            response_len += piece_len;
+
+            /* Stop if we hit a newline - extraction should be one line only */
+            if (strchr(piece, '\n') != NULL) {
+                break;
+            }
+        }
+
+        batch_gen.n_tokens = 1;
+        batch_gen.token[0] = new_token;
+        batch_gen.pos[0] = n_prompt_tokens + gen_count;
+        batch_gen.n_seq_id[0] = 1;
+        batch_gen.seq_id[0][0] = current_seq;
+        batch_gen.logits[0] = true;
+
+        if (llama_decode(state->ctx, batch_gen) != 0) {
+            break;
+        }
+        gen_count++;
+    }
+
+    llama_batch_free(batch_gen);
+    response_buf[response_len] = '\0';
+
+    /* Normalize: trim whitespace and lowercase */
+    char *trimmed = response_buf;
+    while (*trimmed == ' ' || *trimmed == '\n' || *trimmed == '\r' || *trimmed == '\t') {
+        trimmed++;
+    }
+    char *end = trimmed + strlen(trimmed) - 1;
+    while (end > trimmed && (*end == ' ' || *end == '\n' || *end == '\r' || *end == '\t')) {
+        *end-- = '\0';
+    }
+
+    /* Convert to lowercase */
+    for (int i = 0; trimmed[i]; i++) {
+        trimmed[i] = tolower((unsigned char)trimmed[i]);
+    }
+
+    if (llm->config.verbose) {
+        printf("Extracted: \"%s\"\n", trimmed);
+        printf("===================\n\n");
+    }
+
+    /* Copy trimmed result back to start of buffer */
+    if (trimmed != response_buf) {
+        memmove(response_buf, trimmed, strlen(trimmed) + 1);
+    }
+
+    return response_buf;
 }
 
 int nagi_llm_matches_expected(nagi_llm_t *llm, const char *input,

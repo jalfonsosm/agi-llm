@@ -8,87 +8,347 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdio.h>
 #include "nagi_llm_bitnet.h"
 #include "../../include/nagi_llm_context.h"
 #include "llama.h"
 #include "llm_utils.h"
 
-//TODO: proper format for bitnet?
-/* Extraction prompt template */
+/* Prompt templates for BitNet (Llama 3 format) */
 static const char *EXTRACTION_PROMPT_TEMPLATE =
-    "<|user|>\n"
+    "<|start_header_id|>user<|end_header_id|>\n"
     "Translate to English using these verbs: %s\n"
-    "Input: mira el castillo<|end|>\n"
-    "<|assistant|>\n"
-    "look castle<|end|>\n"
-    "<|user|>\n"
+    "Input: mira el castillo<|eot_id|>\n"
+    "<|start_header_id|>assistant<|end_header_id|>\n"
+    "look castle<|eot_id|>\n"
+    "<|start_header_id|>user<|end_header_id|>\n"
     "Translate to English using these verbs: %s\n"
-    "Input: %s<|end|>\n"
-    "<|assistant|>\n";
+    "Input: coge la llave<|eot_id|>\n"
+    "<|start_header_id|>assistant<|end_header_id|>\n"
+    "get key<|eot_id|>\n"
+    "<|start_header_id|>user<|end_header_id|>\n"
+    "Translate to English using these verbs: %s\n"
+    "Input: %s<|eot_id|>\n"
+    "<|start_header_id|>assistant<|end_header_id|>\n";
 
 static const char *EXTRACTION_PROMPT_SIMPLE =
-    "<|user|>\n"
+    "<|start_header_id|>user<|end_header_id|>\n"
     "Translate to English (verb noun only):\n"
-    "%s<|end|>\n"
-    "<|assistant|>\n";
+    "mira el castillo<|eot_id|>\n"
+    "<|start_header_id|>assistant<|end_header_id|>\n"
+    "look castle<|eot_id|>\n"
+    "<|start_header_id|>user<|end_header_id|>\n"
+    "Translate to English (verb noun only):\n"
+    "coge la llave<|eot_id|>\n"
+    "<|start_header_id|>assistant<|end_header_id|>\n"
+    "get key<|eot_id|>\n"
+    "<|start_header_id|>user<|end_header_id|>\n"
+    "Translate to English (verb noun only):\n"
+    "%s<|eot_id|>\n"
+    "<|start_header_id|>assistant<|end_header_id|>\n";
 
-//TODO: static const char *RESPONSE_GENERATION_PROMPT =
-// TODO: static const char *SEMANTIC_MATCHING_PROMPT =
+/* Prompt for response generation */
+static const char *RESPONSE_GENERATION_PROMPT =
+    "<|start_header_id|>user<|end_header_id|>\n"
+    "You are a text adventure game narrator. Translate ONLY the game response to match "
+    "the exact language the player used. Do NOT include any context information in your answer.\n\n"
+    "Player said: %s\n"
+    "Game responded: %s\n"
+    "%s\n"  /* Optional context - for information only */
+    "Translate ONLY the game response above to the player's language (Spanish, English, etc.). "
+    "Output only the translated text, nothing else:<|eot_id|>\n"
+    "<|start_header_id|>assistant<|end_header_id|>\n";
+
+/* Prompt for semantic matching */
+static const char *SEMANTIC_MATCHING_PROMPT =
+    "<|start_header_id|>system<|end_header_id|>\n"
+    "You are a command matcher for a text adventure game. Your job is to determine if a user's input "
+    "(in any language) has the same meaning as a specific game command (in English).\n\n"
+    "Rules:\n"
+    "- If the input means the same action as the expected command, answer 'yes'\n"
+    "- If the input means something different, answer 'no'\n"
+    "- Only answer with 'yes' or 'no', nothing else\n"
+    "<|eot_id|>\n"
+    "<|start_header_id|>user<|end_header_id|>\n"
+    "Expected command: look castle\n"
+    "User input: mira el castillo\n"
+    "Does the input match the command?<|eot_id|>\n"
+    "<|start_header_id|>assistant<|end_header_id|>\n"
+    "yes<|eot_id|>\n"
+    "<|start_header_id|>user<|end_header_id|>\n"
+    "Expected command: get key\n"
+    "User input: coge la llave\n"
+    "Does the input match the command?<|eot_id|>\n"
+    "<|start_header_id|>assistant<|end_header_id|>\n"
+    "yes<|eot_id|>\n"
+    "<|start_header_id|>user<|end_header_id|>\n"
+    "Expected command: quit\n"
+    "User input: mira el castillo\n"
+    "Does the input match the command?<|eot_id|>\n"
+    "<|start_header_id|>assistant<|end_header_id|>\n"
+    "no<|eot_id|>\n"
+    "<|start_header_id|>user<|end_header_id|>\n"
+    "Expected command: %s\n"
+    "User input: %s\n"
+    "Does the input match the command?<|eot_id|>\n"
+    "<|start_header_id|>assistant<|end_header_id|>\n";
 
 /*
- * Extract words from input
+ * Semantic matching - uses LLM to determine if input matches expected command
+ * Same approach as llamacpp backend
  */
-static const char *bitnet_extract_words(nagi_llm_t *llm, const char *input)
+static int bitnet_matches_expected(nagi_llm_t *llm, const char *input,
+                                   const int *expected_word_ids, int expected_count)
 {
-    static char response_buf[256];
+    llm_state_t *state = llm->state;
     char prompt[NAGI_LLM_MAX_PROMPT_SIZE];
+    char expected_command[256];
+    char response_buf[256];
     char piece[64];
     int n_tokens, n_prompt_tokens;
     int current_seq;
-    int response_len, gen_count, max_extract_tokens;
+    int response_len, gen_count;
     llama_token *tokens;
-    int i, k, n_eval;
-    int piece_len;
-    llm_state_t *state = llm->state;
+    
+    if (!nagi_llm_ready(llm)) return 0;
+    if (expected_count == 0) return 0;
 
-    if (!nagi_llm_ready(llm)) return input;
-    if (!input || input[0] == '\0') return input;
+    /* Build expected command string from word IDs */
+    expected_command[0] = '\0';
+    for (int i = 0; i < expected_count; i++) {
+        int word_id = expected_word_ids[i];
+        const char *word_str = get_word_string(llm, word_id);
 
-    /* Build prompt */
-    const char *verbs = extract_game_verbs(state);
-    if (verbs && verbs[0] != '\0') {
-        snprintf(prompt, sizeof(prompt), EXTRACTION_PROMPT_TEMPLATE, verbs, verbs, input);
-    } else {
-        snprintf(prompt, sizeof(prompt), EXTRACTION_PROMPT_SIMPLE, input);
+        if (word_str) {
+            if (expected_command[0] != '\0') {
+                strcat(expected_command, " ");
+            }
+            strcat(expected_command, word_str);
+        }
     }
 
-    /* Use rotating sequences */
-    current_seq = (state->seq_counter++) % 4;
+    if (expected_command[0] == '\0') return 0;
 
-    /* Clear KV cache */
-    /* Clear KV cache */
+    /* Build semantic matching prompt */
+    snprintf(prompt, sizeof(prompt),
+        SEMANTIC_MATCHING_PROMPT,
+        expected_command, input);
+
+    /* Use rotating sequence IDs to avoid KV cache conflicts */
+    current_seq = (state->seq_counter++) % 8;
+
+    if (llm->config.verbose) {
+        printf("\n=== BitNet Semantic Matching ===\n");
+        printf("User input: \"%s\"\n", input);
+        printf("Expected: \"%s\"\n", expected_command);
+        printf("Using sequence ID: %d\n", current_seq);
+    }
+
+    /* Clear KV cache for this sequence before use */
     llama_kv_cache_seq_rm(state->ctx, current_seq, -1, -1);
+    if (llm->config.verbose) {
+        printf("KV cache cleared for seq %d\n", current_seq);
+    }
 
     /* Tokenize */
     n_tokens = llama_n_ctx(state->ctx);
     tokens = (llama_token *)malloc(n_tokens * sizeof(llama_token));
-    printf("BitNet: Tokenizing prompt: %s\n", prompt); fflush(stdout);
     n_prompt_tokens = llama_tokenize(state->model,
                                      prompt, (int)strlen(prompt),
                                      tokens, n_tokens, true, true);
     if (n_prompt_tokens < 0) {
         free(tokens);
-        return input;
+        return 0;
     }
 
     /* Process prompt */
-    struct llama_batch batch = llama_batch_init(llm->config.batch_size, 0, 4);
-    for (i = 0; i < n_prompt_tokens; i += llm->config.batch_size) {
-        n_eval = n_prompt_tokens - i;
+    struct llama_batch batch = llama_batch_init(llm->config.batch_size, 0, 8);
+    if (llm->config.verbose) {
+        printf("Processing prompt: %d tokens\n", n_prompt_tokens);
+    }
+    for (int i = 0; i < n_prompt_tokens; i += llm->config.batch_size) {
+        int n_eval = n_prompt_tokens - i;
         if (n_eval > llm->config.batch_size) n_eval = llm->config.batch_size;
 
         batch.n_tokens = n_eval;
-        for (k = 0; k < n_eval; k++) {
+        for (int k = 0; k < n_eval; k++) {
+            batch.token[k] = tokens[i + k];
+            batch.pos[k] = i + k;
+            batch.n_seq_id[k] = 1;
+            batch.seq_id[k][0] = current_seq;
+            batch.logits[k] = false;
+        }
+        if (i + n_eval == n_prompt_tokens) {
+            batch.logits[n_eval - 1] = true;
+        }
+        if (llm->config.verbose) {
+            printf("Decoding batch: tokens=%d, first_pos=%d, seq=%d\n", n_eval, i, current_seq);
+        }
+        if (llama_decode(state->ctx, batch) != 0) {
+            if (llm->config.verbose) {
+                printf("ERROR: llama_decode failed during prompt processing\n");
+            }
+            llama_batch_free(batch);
+            free(tokens);
+            return 0;
+        }
+    }
+    llama_batch_free(batch);
+    free(tokens);
+
+    /* Generate response */
+    response_len = 0;
+    gen_count = 0;
+    struct llama_batch batch_gen = llama_batch_init(1, 0, 8);
+    if (llm->config.verbose) {
+        printf("Starting generation phase, prompt processed up to position %d\n", n_prompt_tokens - 1);
+    }
+    while (response_len < (int)sizeof(response_buf) - 1 && gen_count < llm->config.max_tokens) {
+        llama_token new_token = llama_sampler_sample(state->sampler, state->ctx, -1);
+        llama_sampler_accept(state->sampler, new_token);
+
+        if (llama_token_is_eog(state->model, new_token)) {
+            if (llm->config.verbose) {
+                printf("Generation ended: EOG token after %d tokens\n", gen_count);
+            }
+            break;
+        }
+
+        int piece_len = llama_token_to_piece(state->model,
+                                             new_token, piece, sizeof(piece), 0, true);
+        if (piece_len > 0 && response_len + piece_len < (int)sizeof(response_buf) - 1) {
+            memcpy(response_buf + response_len, piece, piece_len);
+            response_len += piece_len;
+        }
+
+        batch_gen.n_tokens = 1;
+        batch_gen.token[0] = new_token;
+        batch_gen.pos[0] = n_prompt_tokens + gen_count;
+        batch_gen.n_seq_id[0] = 1;
+        batch_gen.seq_id[0][0] = current_seq;
+        batch_gen.logits[0] = true;
+
+        if (llm->config.verbose && gen_count == 0) {
+            printf("First generation decode: pos=%d, seq=%d\n", batch_gen.pos[0], current_seq);
+        }
+
+        if (llama_decode(state->ctx, batch_gen) != 0) {
+            if (llm->config.verbose) {
+                printf("ERROR: llama_decode failed during generation at token %d (pos=%d)\n",
+                       gen_count, n_prompt_tokens + gen_count);
+            }
+            break;
+        }
+        gen_count++;
+    }
+
+    if (llm->config.verbose && gen_count >= llm->config.max_tokens) {
+        printf("Generation stopped: max_tokens limit (%d) reached\n", llm->config.max_tokens);
+    }
+
+    llama_batch_free(batch_gen);
+    response_buf[response_len] = '\0';
+
+    /* Normalize response: convert to lowercase and trim whitespace */
+    for (int i = 0; i < response_len; i++) {
+        response_buf[i] = tolower((unsigned char)response_buf[i]);
+    }
+
+    /* Trim leading whitespace */
+    char *trimmed = response_buf;
+    while (*trimmed == ' ' || *trimmed == '\n' || *trimmed == '\r' || *trimmed == '\t') {
+        trimmed++;
+    }
+
+    if (llm->config.verbose) {
+        printf("LLM response: \"%s\"\n", response_buf);
+        printf("Trimmed response: \"%s\"\n", trimmed);
+    }
+
+    /* Check if response starts with "yes" or "no" */
+    if (strncmp(trimmed, "yes", 3) == 0) {
+        if (llm->config.verbose) {
+            printf("Result: MATCH\n===================\n\n");
+        }
+        return 1;
+    }
+    if (strncmp(trimmed, "no", 2) == 0) {
+        if (llm->config.verbose) {
+            printf("Result: NO MATCH\n===================\n\n");
+        }
+        return 0;
+    }
+
+    /* If LLM didn't give clear yes/no, assume no match (conservative) */
+    if (llm->config.verbose) {
+        printf("Result: NO MATCH (unclear response)\n===================\n\n");
+    }
+    return 0;
+}
+
+/*
+ * Generate response
+ */
+static int bitnet_generate_response(nagi_llm_t *llm, const char *game_response,
+                                   const char *user_input, char *output, int output_size)
+{
+    llm_state_t *state = llm->state;
+    char prompt[NAGI_LLM_MAX_PROMPT_SIZE];
+    char context_str[512];
+    int n_tokens, n_prompt_tokens;
+    int current_seq;
+    int response_len, gen_count, max_response_tokens;
+    char piece[64];
+    llama_token *tokens;
+
+    if (!nagi_llm_ready(llm)) return 0;
+    if (!game_response || !user_input || !output || output_size <= 0) return 0;
+
+    /* Get context if available */
+    context_str[0] = '\0';
+    #ifdef NAGI_ENABLE_LLM
+    const char *context = llm_context_build();
+    if (context && context[0] != '\0') {
+        snprintf(context_str, sizeof(context_str), "Game context: %s\n", context);
+    }
+    #endif
+
+    /* Build generation prompt */
+    snprintf(prompt, sizeof(prompt), RESPONSE_GENERATION_PROMPT,
+             user_input, game_response, context_str);
+
+    /* Use rotating sequence IDs */
+    current_seq = state->seq_counter++ % 8;
+
+    if (llm->config.verbose) {
+        printf("\n=== BitNet Response Generation ===\n");
+        printf("User input: \"%s\"\n", user_input);
+        printf("Game response: \"%s\"\n", game_response);
+        printf("Using sequence ID: %d\n", current_seq);
+    }
+
+    /* Clear KV cache for this sequence */
+    llama_kv_cache_seq_rm(state->ctx, current_seq, -1, -1);
+
+    /* Tokenize prompt */
+    n_tokens = llama_n_ctx(state->ctx);
+    tokens = (llama_token *)malloc(n_tokens * sizeof(llama_token));
+    n_prompt_tokens = llama_tokenize(state->model,
+                                     prompt, (int)strlen(prompt),
+                                     tokens, n_tokens, true, true);
+    if (n_prompt_tokens < 0) {
+        free(tokens);
+        return 0;
+    }
+
+    /* Process prompt in batches */
+    struct llama_batch batch = llama_batch_init(llm->config.batch_size, 0, 8);
+    for (int i = 0; i < n_prompt_tokens; i += llm->config.batch_size) {
+        int n_eval = n_prompt_tokens - i;
+        if (n_eval > llm->config.batch_size) n_eval = llm->config.batch_size;
+
+        batch.n_tokens = n_eval;
+        for (int k = 0; k < n_eval; k++) {
             batch.token[k] = tokens[i + k];
             batch.pos[k] = i + k;
             batch.n_seq_id[k] = 1;
@@ -102,34 +362,31 @@ static const char *bitnet_extract_words(nagi_llm_t *llm, const char *input)
         if (llama_decode(state->ctx, batch) != 0) {
             llama_batch_free(batch);
             free(tokens);
-            return input;
+            return 0;
         }
     }
     llama_batch_free(batch);
     free(tokens);
 
-    /* Generate response */
+    /* Generate response using creative sampler */
     response_len = 0;
     gen_count = 0;
-    max_extract_tokens = 10;
+    max_response_tokens = 150;  /* Limit for adventure game responses */
+    struct llama_batch batch_gen = llama_batch_init(1, 0, 8);
 
-    struct llama_batch batch_gen = llama_batch_init(1, 0, 4);
-
-    while (response_len < (int)sizeof(response_buf) - 1 && gen_count < max_extract_tokens) {
-        llama_token new_token = llama_sampler_sample(state->sampler, state->ctx, -1);
-        llama_sampler_accept(state->sampler, new_token);
+    while (response_len < output_size - 1 && gen_count < max_response_tokens) {
+        llama_token new_token = llama_sampler_sample(state->sampler_creative, state->ctx, -1);
+        llama_sampler_accept(state->sampler_creative, new_token);
 
         if (llama_token_is_eog(state->model, new_token)) {
             break;
         }
 
-        piece_len = llama_token_to_piece(state->model,
-                                        new_token, piece, sizeof(piece), 0, true);
-        if (piece_len > 0 && response_len + piece_len < (int)sizeof(response_buf) - 1) {
-            memcpy(response_buf + response_len, piece, piece_len);
+        int piece_len = llama_token_to_piece(state->model,
+                                             new_token, piece, sizeof(piece), 0, true);
+        if (piece_len > 0 && response_len + piece_len < output_size - 1) {
+            memcpy(output + response_len, piece, piece_len);
             response_len += piece_len;
-
-            if (strchr(piece, '\n') != NULL) break;
         }
 
         batch_gen.n_tokens = 1;
@@ -146,10 +403,10 @@ static const char *bitnet_extract_words(nagi_llm_t *llm, const char *input)
     }
 
     llama_batch_free(batch_gen);
-    response_buf[response_len] = '\0';
+    output[response_len] = '\0';
 
-    /* Trim and lowercase */
-    char *trimmed = response_buf;
+    /* Trim whitespace */
+    char *trimmed = output;
     while (*trimmed == ' ' || *trimmed == '\n' || *trimmed == '\r' || *trimmed == '\t') {
         trimmed++;
     }
@@ -158,131 +415,18 @@ static const char *bitnet_extract_words(nagi_llm_t *llm, const char *input)
         *end-- = '\0';
     }
 
-    for (i = 0; trimmed[i]; i++) {
-        trimmed[i] = tolower((unsigned char)trimmed[i]);
+    /* Move trimmed result to start of output buffer */
+    if (trimmed != output) {
+        memmove(output, trimmed, strlen(trimmed) + 1);
+        response_len = strlen(output);
     }
 
-    if (trimmed != response_buf) {
-        memmove(response_buf, trimmed, strlen(trimmed) + 1);
+    if (llm->config.verbose) {
+        printf("Generated response: \"%s\"\n", output);
+        printf("===============================\n\n");
     }
 
-    return response_buf;
-}
-
-/*
- * Semantic matching
- */
-static int bitnet_matches_expected(nagi_llm_t *llm, const char *input,
-                                   const int *expected_word_ids, int expected_count)
-{
-    llm_state_t *state = llm->state;
-    const char *extracted;
-    char *extracted_copy;
-    char *token;
-    int i, j;
-    int match_count = 0;
-    const u8 *dict_data;
-    
-    if (!nagi_llm_ready(llm) || !input || !expected_word_ids || expected_count <= 0) {
-        return 0;
-    }
-
-    /* 1. Extract words from input (e.g., "look castle") */
-    extracted = bitnet_extract_words(llm, input);
-    if (!extracted || extracted[0] == '\0') {
-        return 0;
-    }
-
-    /* 2. Check if extracted words match any expected words */
-    /* We need to look up the string representation of expected_word_ids */
-    if (!state->dictionary_data) {
-        return 0;
-    }
-    
-    dict_data = state->dictionary_data;
-
-    /* Make a copy of extracted string to tokenize */
-    extracted_copy = strdup(extracted);
-    if (!extracted_copy) return 0;
-
-    token = strtok(extracted_copy, " ,");
-    while (token) {
-        int token_matched = 0;
-        
-        /* Check this token against all expected words */
-        for (i = 0; i < expected_count; i++) {
-            int expected_id = expected_word_ids[i];
-            
-            /* Look up word string in dictionary */
-            /* Dictionary format: 26 offsets (52 bytes) -> word nodes */
-            /* We have to scan the whole dictionary to find the ID? That's slow. */
-            /* AGI dictionary is optimized for string -> ID, not ID -> string. */
-            /* However, we can optimize by caching or just scanning since dict is small (~20KB) */
-
-            /* Scan dictionary for this ID */
-            for (j = 0; j < 26; j++) {
-                u16 offset = load_be_16(dict_data + j * 2);
-                if (offset == 0 || offset >= state->dictionary_size) continue;
-
-                const u8 *word_node = dict_data + offset;
-                while (1) {
-                    u16 id = load_be_16(word_node);
-                    word_node += 2;
-                    if (id == 0) break; /* End of list for this letter */
-
-                    u8 len = *word_node++;
-                    if (len == 0) break; /* Should not happen if id != 0 */
-                    
-                    /* Check if this is the word we are looking for */
-                    if (id == expected_id) {
-                        /* Compare with extracted token (check length first for safety) */
-                        size_t token_len = strlen(token);
-                        if (token_len == len &&
-                            strncasecmp(token, (const char *)word_node, len) == 0) {
-                            token_matched = 1;
-                        }
-                    }
-                    
-                    word_node += len;
-                    if (token_matched) break;
-                }
-                if (token_matched) break;
-            }
-            if (token_matched) break;
-        }
-        
-        if (token_matched) {
-            match_count++;
-        }
-        
-        token = strtok(NULL, " ,");
-    }
-
-    free(extracted_copy);
-
-    /* If we matched at least one significant word, consider it a match */
-    /* Adjust logic as needed - maybe we need to match ALL extracted words? */
-    /* For now, if we found any of the expected words in the extraction, return true */
-    return match_count > 0;
-}
-
-/*
- * Generate response (simplified for BitNet)
- */
- // TODO:
-static int bitnet_generate_response(nagi_llm_t *llm, const char *game_response,
-                                   const char *user_input, char *output, int output_size)
-{
-    llm_state_t *state = llm->state;
-
-    if (!nagi_llm_ready(llm)) return 0;
-    if (!game_response || !output || output_size <= 0) return 0;
-
-    /* BitNet optimized for extraction, not generation - just return game response */
-    strncpy(output, game_response, output_size - 1);
-    output[output_size - 1] = '\0';
-
-    return (int)strlen(output);
+    return response_len;
 }
 
 /*
@@ -298,7 +442,11 @@ nagi_llm_t *nagi_llm_bitnet_create(void)
     }
 
     llm->backend = NAGI_LLM_BACKEND_BITNET;
-    llm->extract_words = bitnet_extract_words;
+    
+    /* Set BitNet-specific prompt templates (Llama 3 format) */
+    llm->extraction_prompt_template = EXTRACTION_PROMPT_TEMPLATE;
+    llm->extraction_prompt_simple = EXTRACTION_PROMPT_SIMPLE;
+    
     llm->matches_expected = bitnet_matches_expected;
     llm->generate_response = bitnet_generate_response;
     llm->state = NULL;
@@ -317,7 +465,7 @@ nagi_llm_t *nagi_llm_bitnet_create(void)
     llm->config.verbose = 1;
     llm->config.mode = NAGI_LLM_MODE_EXTRACTION;
     llm->config.flash_attn = false;  /* BitNet works best without flash attention */
-    llm->config.n_seq_max = 1; /* TODO: is this the correct default? */
+    llm->config.n_seq_max = 1; /* BitNet uses simpler KV cache */
 
     return llm;
 }

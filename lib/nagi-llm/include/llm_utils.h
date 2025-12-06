@@ -1,99 +1,28 @@
 #ifndef LLM_UTILS_H
 #define LLM_UTILS_H
 
-/* endian conversion function (big-endian to host) */
+#include <stdio.h>
+
+/* Forward declaration */
+typedef struct nagi_llm nagi_llm_t;
+
+/* Endian conversion function (big-endian to host) */
 static inline u16 load_be_16(const u8 *ptr) {
     return (u16)((ptr[0] << 8) | ptr[1]);
 }
+
+/*
+ * Get word string from word ID
+ * Returns pointer to static buffer with decoded word, or NULL if not found
+ */
+const char *get_word_string(nagi_llm_t *llm, int word_id);
 
 /*
  * Extract common verbs from the game dictionary
  * Returns a static buffer with comma-separated verb list (e.g., "look, get, open, close")
  * Extracts first 40-50 words which are typically verbs in AGI games
  */
-static const char *extract_game_verbs(nagi_llm_t *llm)
-{
-    llm_state_t *state = llm->state;
-    static char verb_list[512];
-    static int verbs_extracted = 0;
-
-    /* Only extract once */
-    if (verbs_extracted) {
-        return verb_list;
-    }
-
-    /* Verify that words.tok data is loaded */
-    if (!state->dictionary_data) {
-        fprintf(stderr, "LLM Parser: state->dictionary_data not loaded, cannot extract verbs\n");
-        return NULL;
-    }
-
-    verb_list[0] = '\0';
-    int verb_count = 0;
-    int max_verbs = 50;  /* First ~50 words are usually verbs in AGI */
-
-    /* Iterate through all 26 letter offsets (A-Z) */
-    for (int i = 0; i < 26 && verb_count < max_verbs; i++) {
-        u16 offset = load_be_16(state->dictionary_data + i * 2);
-        if (offset == 0) continue;
-
-        u8 *ptr = state->dictionary_data + offset;
-        char buffer[64];
-        buffer[0] = '\0';
-
-        int words_in_section = 0;
-        while (verb_count < max_verbs) {
-            u8 prefix_count = *ptr;
-
-            /* End of section */
-            if (words_in_section > 0 && prefix_count == 0) {
-                break;
-            }
-
-            ptr++;
-            words_in_section++;
-            int len = prefix_count;
-
-            /* Decode characters */
-            while (1) {
-                u8 byte = *ptr;
-                char decoded_char = (byte & 0x7F) ^ 0x7F;
-
-                if (len < (int)sizeof(buffer) - 1) {
-                    buffer[len++] = decoded_char;
-                }
-
-                if (byte & 0x80) {
-                    ptr++;
-                    break;
-                }
-                ptr++;
-            }
-
-            buffer[len] = '\0';
-
-            /* Read word ID and skip it */
-            ptr += 2;
-
-            /* Add to verb list if there's space */
-            if (strlen(buffer) > 0) {
-                if (verb_list[0] != '\0') {
-                    strncat(verb_list, ", ", sizeof(verb_list) - strlen(verb_list) - 1);
-                }
-                strncat(verb_list, buffer, sizeof(verb_list) - strlen(verb_list) - 1);
-                verb_count++;
-            }
-        }
-    }
-
-    verbs_extracted = 1;
-
-    if (llm->config.verbose) {
-        printf("LLM Parser: Extracted %d verbs from dictionary: %s\n", verb_count, verb_list);
-    }
-
-    return verb_list;
-}
+const char *extract_game_verbs(nagi_llm_t *llm);
 
 // /* Extract game verbs from dictionary */
 // static const char *extract_game_verbs_new(llm_state_t *state)

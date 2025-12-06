@@ -21,6 +21,7 @@ target_include_directories(nagi-llm PUBLIC
 target_sources(nagi-llm PRIVATE
     src/nagi_llm.c
     src/nagi_llm_context.c
+    src/llm_utils.c
 )
 
 # llama.cpp backend

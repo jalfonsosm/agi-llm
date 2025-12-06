@@ -113,14 +113,10 @@ struct nagi_llm {
     /* Configuration */
     nagi_llm_config_t config;
 
-    /*
-     * Extract verb and noun from user input (any language) to English words
-     *
-     * @param llm: LLM instance
-     * @param input: User input string
-     * @return: Static buffer with extracted words (e.g., "look castle"), or NULL on failure
-     */
-    const char *(*extract_words)(nagi_llm_t *llm, const char *input);
+    /* Backend-specific prompt templates */
+    const char *extraction_prompt_template;
+    const char *extraction_prompt_simple;
+
     /*
      * Check if input matches expected command (Semantic Match)
      *
