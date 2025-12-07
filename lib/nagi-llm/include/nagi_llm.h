@@ -48,7 +48,7 @@ typedef enum {
 typedef enum {
     NAGI_LLM_BACKEND_LLAMACPP = 0,  /* llama.cpp - embedded local LLM */
     NAGI_LLM_BACKEND_BITNET = 1,    /* BitNet - optimized quantized models */
-    NAGI_LLM_BACKEND_CLOUD_API = 2  /* Cloud API (Claude, OpenAI, etc.) */
+    NAGI_LLM_BACKEND_CLOUD = 2      /* Cloud API (OpenAI-compatible) */
 } nagi_llm_backend_t;
 
 /*
@@ -112,6 +112,9 @@ struct nagi_llm {
 
     /* Configuration */
     nagi_llm_config_t config;
+    
+    /* Backend-specific data */
+    void *backend_data;
 
     /* Backend-specific prompt templates */
     const char *extraction_prompt_template;

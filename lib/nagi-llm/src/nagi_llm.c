@@ -21,8 +21,8 @@ nagi_llm_t *nagi_llm_llamacpp_create(void);
 nagi_llm_t *nagi_llm_bitnet_create(void);
 #endif
 
-#ifdef NAGI_LLM_HAS_CLOUD_API
-nagi_llm_t *nagi_llm_cloud_api_create(void);
+#ifdef NAGI_LLM_HAS_CLOUD
+nagi_llm_t *nagi_llm_cloud_create(void);
 #endif
 
 /* Common error setter */
@@ -60,9 +60,9 @@ nagi_llm_t *nagi_llm_create(nagi_llm_backend_t backend)
             break;
 #endif
 
-#ifdef NAGI_LLM_HAS_CLOUD_API
-        case NAGI_LLM_BACKEND_CLOUD_API:
-            llm = nagi_llm_cloud_api_create();
+#ifdef NAGI_LLM_HAS_CLOUD
+        case NAGI_LLM_BACKEND_CLOUD:
+            llm = nagi_llm_cloud_create();
             break;
 #endif
 
