@@ -65,14 +65,12 @@ static const char *EXTRACTION_PROMPT_SIMPLE =
 /* Prompt for response generation - translates game response to user's language */
 static const char *RESPONSE_GENERATION_PROMPT =
     START_OF_USER
-    "You are a text adventure game narrator. Translate ONLY the game response to match "
-    "Use satirical responses, use irony, sarcasm, jokes and humor, be creative and imaginative\n"
-    "the exact language the player used. Do NOT include any context information in your answer.\n\n"
-    "Player said: %s\n"
-    "Game responded: %s\n"
-    "%s\n"  /* Optional context - for information only */
-    "Translate ONLY the game response above to the player's language (Spanish, English, etc.). "
-    "Output only the translated text, nothing else:" END_OF_USER
+    "Translate the game response to the SAME language the player used.\n\n"
+    "Player input: %s\n"
+    "Game response (English): %s\n"
+    "%s"
+    "If player wrote in Spanish, respond in Spanish. If English, respond in English.\n"
+    "Be creative, use humor and sarcasm. Output ONLY the translated response:" END_OF_USER
     START_OF_ASSISTANT;
 
 /* Prompt for SEMANTIC mode - matches input meaning with expected command */

@@ -175,8 +175,18 @@ if(NAGI_LLM_ENABLE_BITNET)
         list(APPEND NAGI_BITNET_LIBS "-framework Accelerate")
     endif()
 
+    set(BITNET_MODEL_PATH "${BITNET_SOURCE_DIR}/models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf")
+
+    # Export variables to parent scope
+    set(BITNET_SOURCE_DIR ${BITNET_SOURCE_DIR} PARENT_SCOPE)
+    set(BITNET_BUILD_DIR ${BITNET_BUILD_DIR} PARENT_SCOPE)
+    set(BITNET_INCLUDE_DIR ${BITNET_INCLUDE_DIR} PARENT_SCOPE)
+    set(BITNET_GGML_INCLUDE_DIR ${BITNET_GGML_INCLUDE_DIR} PARENT_SCOPE)
+    set(BITNET_SRC_INCLUDE_DIR ${BITNET_SRC_INCLUDE_DIR} PARENT_SCOPE)
+    set(NAGI_BITNET_LIBS ${NAGI_BITNET_LIBS} PARENT_SCOPE)
+    set(BITNET_MODEL_PATH ${BITNET_MODEL_PATH} PARENT_SCOPE)
+
     message(STATUS "BitNet source dir: ${BITNET_SOURCE_DIR}")
     message(STATUS "BitNet include dir: ${BITNET_INCLUDE_DIR}")
-
-    set(BITNET_MODEL_PATH "${BITNET_SOURCE_DIR}/models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf" CACHE INTERNAL "Path to BitNet model")
+    message(STATUS "BitNet model path: ${BITNET_MODEL_PATH}")
 endif()

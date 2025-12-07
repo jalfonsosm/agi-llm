@@ -47,6 +47,7 @@ if(NAGI_LLM_ENABLE_LLAMACPP)
         
     if(NOT DEFINED MODEL_NAME)
         set(MODEL_NAME "GEMMA3" CACHE STRING "Select the LLM model: PHI3, GEMMA3)")
+        # set(MODEL_NAME "PHI3" CACHE STRING "Select the LLM model: PHI3, GEMMA3)")
     endif()
 
     if(MODEL_NAME STREQUAL "PHI3")
@@ -65,18 +66,16 @@ if(NAGI_LLM_ENABLE_LLAMACPP)
         set(MODEL_URL "https://huggingface.co/Aldaris/gemma-3-4b-it-Q4_K_M-GGUF/resolve/main/gemma-3-4b-it-q4_k_m.gguf")
         message(STATUS "Configuring for Gemma 3 prompts.")
         target_compile_definitions(nagi-llm PRIVATE
-            START_OF_SYSTEM="<start_of_system>\\n"
-            END_OF_SYSTEM="<end_of_system>\\n"
-            START_OF_USER="<start_of_user>\\n"
-            END_OF_USER="<end_of_user>\\n"
-            START_OF_ASSISTANT="<start_of_assistant>\\n"
-            END_OF_ASSISTANT="<end_of_assistant>\\n"
+            START_OF_SYSTEM="<start_of_turn>user\\n"
+            END_OF_SYSTEM="<end_of_turn>\\n"
+            START_OF_USER="<start_of_turn>user\\n"
+            END_OF_USER="<end_of_turn>\\n"
+            START_OF_ASSISTANT="<start_of_turn>model\\n"
+            END_OF_ASSISTANT="<end_of_turn>\\n"
         )
     else()
         message(FATAL_ERROR "Unknown MODEL_NAME: ${MODEL_NAME}. Use PHI3 or GEMMA3.")
     endif()
-
-    set(DEFAULT_MODEL_PATH "${CMAKE_BINARY_DIR}/models/llamacpp_model.gguf")
 
     ExternalProject_Add(llama_cpp
         GIT_REPOSITORY "https://github.com/ggerganov/llama.cpp.git"
@@ -117,9 +116,15 @@ if(NAGI_LLM_ENABLE_LLAMACPP)
         list(APPEND NAGI_LL_LIBS "-framework Metal" "-framework MetalPerformanceShaders")
     endif()
 
-    # NAGI_LL_LIBS is now available for use by nagi-llm
+    # Export variables to parent scope
+    set(LLAMA_SOURCE_DIR ${LLAMA_SOURCE_DIR} PARENT_SCOPE)
+    set(LLAMA_BUILD_DIR ${LLAMA_BUILD_DIR} PARENT_SCOPE)
+    set(LLAMA_INCLUDE_DIR ${LLAMA_INCLUDE_DIR} PARENT_SCOPE)
+    set(NAGI_LL_LIBS ${NAGI_LL_LIBS} PARENT_SCOPE)
+    set(MODEL_URL ${MODEL_URL} PARENT_SCOPE)
 
     message(STATUS "LLM (llama.cpp) configuration prepared")
     message(STATUS "Llama.cpp source dir: ${LLAMA_SOURCE_DIR}")
     message(STATUS "Llama.cpp include dir: ${LLAMA_INCLUDE_DIR}")
+    message(STATUS "Model URL: ${MODEL_URL}")
 endif()

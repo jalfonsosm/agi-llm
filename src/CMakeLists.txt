@@ -236,35 +236,45 @@ if(NAGI_LLM_ENABLE_LLAMACPP OR NAGI_LLM_ENABLE_BITNET)
     target_link_libraries(nagi PRIVATE nagi-llm)
     target_include_directories(nagi PRIVATE ${CMAKE_SOURCE_DIR}/lib/nagi-llm/include)
 
+    set(DEFAULT_MODEL_PATH "${CMAKE_BINARY_DIR}/models/llm_model.gguf")
+    
     if(NAGI_LLM_ENABLE_BITNET)
-        set(MODEL_FILENAME "bitnet_model.gguf")
-        set(DEFAULT_MODEL_PATH "${CMAKE_BINARY_DIR}/models/${MODEL_FILENAME}")
+        if(DEFINED BITNET_MODEL_PATH)
+            add_custom_command(
+                OUTPUT "${DEFAULT_MODEL_PATH}"
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/models"
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different "${BITNET_MODEL_PATH}" "${DEFAULT_MODEL_PATH}"
+                DEPENDS bitnet_cpp
+                COMMENT "Copying BitNet model to build directory..."
+                VERBATIM
+            )
+            
+            add_custom_target(copy_bitnet_model DEPENDS "${DEFAULT_MODEL_PATH}")
+            add_dependencies(nagi copy_bitnet_model)
+            
+            message(STATUS "LLM Model: BitNet 1.58-bit (2B parameters) will be copied to ${DEFAULT_MODEL_PATH}")
+        else()
+            message(WARNING "BITNET_MODEL_PATH not defined, model copy will be skipped")
+        endif()
+    elseif(NAGI_LLM_ENABLE_LLAMACPP)
+        if(DEFINED MODEL_URL)
+            add_custom_command(
+                OUTPUT "${DEFAULT_MODEL_PATH}"
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/models"
+                COMMAND ${CMAKE_COMMAND} -E echo "Downloading LLM model to ${DEFAULT_MODEL_PATH}..."
+                COMMAND curl -f -L --retry 3 -o "${DEFAULT_MODEL_PATH}" "${MODEL_URL}"
+                DEPENDS llama_cpp
+                COMMENT "Downloading LLM model..."
+                VERBATIM
+            )
 
-        add_custom_command(
-            OUTPUT "${DEFAULT_MODEL_PATH}"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/models"
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${BITNET_MODEL_PATH}" "${DEFAULT_MODEL_PATH}"
-            DEPENDS "${BITNET_MODEL_PATH}"
-            COMMENT "Copying BitNet model to build directory..."
-            VERBATIM
-        )
-        
-        add_custom_target(copy_bitnet_model DEPENDS "${DEFAULT_MODEL_PATH}")
-        add_dependencies(nagi copy_bitnet_model)
-        
-        message(STATUS "LLM Model: BitNet 1.58-bit (2B parameters) will be copied to ${DEFAULT_MODEL_PATH}")
-    else()
-        add_custom_command(
-            OUTPUT "${DEFAULT_MODEL_PATH}"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/models"
-            COMMAND ${CMAKE_COMMAND} -E echo "Downloading LLM model to ${DEFAULT_MODEL_PATH}..."
-            COMMAND curl -f -L --retry 3 -o "${DEFAULT_MODEL_PATH}" "${MODEL_URL}"
-            COMMENT "Downloading LLM model..."
-            VERBATIM
-        )
-
-        add_custom_target(download_model DEPENDS "${DEFAULT_MODEL_PATH}")
-        add_dependencies(nagi download_model)
+            add_custom_target(download_model DEPENDS "${DEFAULT_MODEL_PATH}")
+            add_dependencies(nagi download_model)
+            
+            message(STATUS "LLM Model will be downloaded to ${DEFAULT_MODEL_PATH}")
+        else()
+            message(WARNING "MODEL_URL not defined, model download will be skipped")
+        endif()
     endif()
     
     target_compile_definitions(nagi PRIVATE
@@ -272,8 +282,10 @@ if(NAGI_LLM_ENABLE_LLAMACPP OR NAGI_LLM_ENABLE_BITNET)
         NAGI_DEFAULT_LLM_MODEL_PATH="${DEFAULT_MODEL_PATH}"
     )
 
-    message(STATUS "LLM (llama.cpp) support enabled - static library")
-    message(STATUS "Llama.cpp include dir: ${LLAMA_SOURCE_DIR}")
+    message(STATUS "LLM support enabled")
+    if(DEFINED LLAMA_SOURCE_DIR)
+        message(STATUS "Llama.cpp include dir: ${LLAMA_SOURCE_DIR}")
+    endif()
 else()
     target_compile_definitions(nagi PRIVATE NAGI_NO_LLM=1)
     message(STATUS "LLM support disabled")
