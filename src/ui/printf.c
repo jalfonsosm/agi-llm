@@ -22,9 +22,15 @@ _FormatChar                      cseg     0000245E 00000014
 // window_put_char
 #include "../ui/window.h"
 #include "../sys/chargen.h"
+#include "../lib/utf8_decode.h"
 
 static void format_string_ax(const char *str);
 static void format_char(char ch);
+static void format_utf8_string(const char *str);
+
+/* UTF-8 decoder state for format_char */
+static uint32_t format_char_utf8_state = 0;
+static uint32_t format_char_utf8_codepoint = 0;
 
 // void *format_ip = 0;
 static char *format_strbuff = 0;
@@ -137,21 +143,111 @@ void agi_printf(const char *var8, ...)
 
 static void format_string_ax(const char *str)
 {
-	char al;
+	/* Check if string contains UTF-8 multibyte sequences */
+	const unsigned char *p = (const unsigned char *)str;
+	int has_utf8 = 0;
+	while (*p) {
+		if (*p > 127) {
+			has_utf8 = 1;
+			break;
+		}
+		p++;
+	}
 	
-	al = *(str++);
-	while ( al != 0 )
-	{
-		format_char(al);
-		al = *(str++);
+	if (has_utf8) {
+		printf("format_string_ax: UTF-8 detected, calling format_utf8_string\n");
+		format_utf8_string(str);
+	} else {
+		/* ASCII path - original code */
+		char al = *(str++);
+		while (al != 0) {
+			format_char(al);
+			al = *(str++);
+		}
+	}
+}
+
+static void format_utf8_string(const char *str)
+{
+	const unsigned char *s = (const unsigned char *)str;
+	uint32_t codepoint = 0;
+	uint32_t state = UTF8_ACCEPT;
+	
+	while (*s) {
+		uint32_t byte = (uint32_t)(*s++);
+		uint32_t prev_state = state;
+		
+		utf8_decode(&state, &codepoint, byte);
+		
+		if (state == UTF8_ACCEPT) {
+			/* Complete codepoint decoded */
+			if (format_to_string != 0) {
+				/* For string mode, encode back to UTF-8 */
+				if (codepoint < 0x80) {
+					*(di++) = (char)codepoint;
+				} else if (codepoint < 0x800) {
+					*(di++) = (char)(0xC0 | (codepoint >> 6));
+					*(di++) = (char)(0x80 | (codepoint & 0x3F));
+				} else if (codepoint < 0x10000) {
+					*(di++) = (char)(0xE0 | (codepoint >> 12));
+					*(di++) = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+					*(di++) = (char)(0x80 | (codepoint & 0x3F));
+				} else {
+					*(di++) = (char)(0xF0 | (codepoint >> 18));
+					*(di++) = (char)(0x80 | ((codepoint >> 12) & 0x3F));
+					*(di++) = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+					*(di++) = (char)(0x80 | (codepoint & 0x3F));
+				}
+			} else {
+				/* Display mode - pass Unicode codepoint */
+				if (codepoint > 127) {
+					printf("format_utf8_string: decoded U+%04X\n", codepoint);
+				}
+				window_put_char(codepoint);
+			}
+			codepoint = 0;
+		} else if (state == UTF8_REJECT) {
+			/* Error - reset and skip */
+			state = UTF8_ACCEPT;
+			codepoint = 0;
+			if (prev_state == UTF8_ACCEPT) {
+				/* First byte was invalid, output it as-is */
+				if (format_to_string != 0) {
+					*(di++) = (char)byte;
+				} else {
+					window_put_char(byte);
+				}
+			}
+		}
 	}
 }
 
 static void format_char(char ch)
 {
-	if (format_to_string != 0)
+	if (format_to_string != 0) {
 		*(di++) = ch;
-	else
-		window_put_char(ch);
+	} else {
+		/* Decode UTF-8 on the fly */
+		uint32_t byte = (unsigned char)ch;
+		
+		if (format_char_utf8_state == 0 && byte < 128) {
+			/* Fast path: ASCII */
+			window_put_char(byte);
+		} else {
+			/* UTF-8 multibyte sequence */
+			uint32_t type = utf8_decode(&format_char_utf8_state, &format_char_utf8_codepoint, byte);
+			
+			if (type == UTF8_ACCEPT) {
+				/* Complete codepoint */
+				window_put_char(format_char_utf8_codepoint);
+				format_char_utf8_codepoint = 0;
+			} else if (type == UTF8_REJECT) {
+				/* Error - output replacement character or skip */
+				format_char_utf8_state = UTF8_ACCEPT;
+				format_char_utf8_codepoint = 0;
+			}
+			/* else: waiting for more bytes */
+		}
+	}
 }
 

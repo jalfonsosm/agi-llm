@@ -1,7 +1,7 @@
 #ifndef NAGI_UI_WINDOW_H
 #define NAGI_UI_WINDOW_H
 
-extern void window_put_char(u16 given_char);
+extern void window_put_char(u32 given_char);
 extern void goto_row_col(u16 row, u16 col);
 extern void push_row_col(void);
 extern void pop_row_col(void);

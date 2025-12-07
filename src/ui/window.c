@@ -35,7 +35,8 @@ u16 text_shade = 0;	// if set, text is shaded
 #define TEXT_INVERT 0x1
 #define TEXT_SHADE 0x2
 // if char position isn't within window, move it there?
-void window_put_char(u16 given_char)
+// Now supports Unicode codepoints (> 255) when using TTF rendering
+void window_put_char(u32 given_char)
 {
 	//u16 temp;
 	TPOS char_pos;

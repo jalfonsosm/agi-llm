@@ -340,7 +340,7 @@ void ch_attrib( u8 colour, u16 flags )
 #define TEXT_INVERT 0x1
 #define TEXT_SHADE 0x2
 
-void ch_put(u8 ch)
+void ch_put(u32 ch)
 {
 	POS gfx_pos;
 
@@ -352,7 +352,7 @@ void ch_put(u8 ch)
 		SDL_Surface *glyph_surf;
 		SDL_Color fg_color;
 		u8 fg_index, bg_index;
-		char text[2];
+		char text[5];
 		int font_ascent, font_height;
 		u8 temp;
 		u8 *pixels;
@@ -375,15 +375,42 @@ void ch_put(u8 ch)
 		vid_palette_get_color(fg_index, &fg_color.r, &fg_color.g, &fg_color.b);
 		fg_color.a = 255;
 
-		/* Render glyph with alpha blending */
-		text[0] = (char)ch;
-		text[1] = '\0';
+		/* Encode Unicode codepoint to UTF-8 for TTF rendering */
+		if (ch < 0x80) {
+			text[0] = (char)ch;
+			text[1] = '\0';
+		} else if (ch < 0x800) {
+			text[0] = (char)(0xC0 | (ch >> 6));
+			text[1] = (char)(0x80 | (ch & 0x3F));
+			text[2] = '\0';
+		} else if (ch < 0x10000) {
+			text[0] = (char)(0xE0 | (ch >> 12));
+			text[1] = (char)(0x80 | ((ch >> 6) & 0x3F));
+			text[2] = (char)(0x80 | (ch & 0x3F));
+			text[3] = '\0';
+		} else {
+			text[0] = (char)(0xF0 | (ch >> 18));
+			text[1] = (char)(0x80 | ((ch >> 12) & 0x3F));
+			text[2] = (char)(0x80 | ((ch >> 6) & 0x3F));
+			text[3] = (char)(0x80 | (ch & 0x3F));
+			text[4] = '\0';
+		}
+		
+		/* Debug: print non-ASCII characters */
+		if (ch > 127) {
+			printf("ch_put: Unicode U+%04X -> UTF-8: ", ch);
+			for (int i = 0; text[i]; i++) {
+				printf("%02X ", (unsigned char)text[i]);
+			}
+			printf("\n");
+		}
 
 		/* Get font metrics for proper baseline positioning */
 		font_ascent = TTF_GetFontAscent(ttf_font);
 		font_height = TTF_GetFontHeight(ttf_font);
 
-		glyph_surf = TTF_RenderText_Blended(ttf_font, text, 1, fg_color);
+		/* SDL3_ttf expects length in bytes, not characters */
+		glyph_surf = TTF_RenderText_Blended(ttf_font, text, 0, fg_color);
 
 		if (glyph_surf) {
 			const SDL_PixelFormatDetails *fmt_details;
