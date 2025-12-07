@@ -32,9 +32,9 @@
 static const char *EXTRACTION_PROMPT_TEMPLATE =
     START_OF_USER
     "Translate to English using these verbs: %s\n"
-    "Input: mira el castillo" END_OF_USER
+    "Input: regarde l'arbre" END_OF_USER
     START_OF_ASSISTANT
-    "look castle" END_OF_ASSISTANT
+    "look tree" END_OF_ASSISTANT
     START_OF_USER
     "Translate to English using these verbs: %s\n"
     "Input: coge la llave" END_OF_USER
@@ -49,9 +49,9 @@ static const char *EXTRACTION_PROMPT_TEMPLATE =
 static const char *EXTRACTION_PROMPT_SIMPLE =
     START_OF_USER
     "Translate to English (verb noun only):\n"
-    "mira el castillo" END_OF_USER
+    "regarde l'arbre" END_OF_USER
     START_OF_ASSISTANT
-    "look castle" END_OF_ASSISTANT
+    "look tree" END_OF_ASSISTANT
     START_OF_USER
     "Translate to English (verb noun only):\n"
     "coge la llave" END_OF_USER
@@ -64,13 +64,44 @@ static const char *EXTRACTION_PROMPT_SIMPLE =
 
 /* Prompt for response generation - translates game response to user's language */
 static const char *RESPONSE_GENERATION_PROMPT =
+    START_OF_SYSTEM
+    "You are a witty narrator for a text adventure game. Translate game responses to the player's language with creativity, humor, sarcasm and even irreverence. \n\n"
+    "### LANGUAGE RULE: ALWAYS use the SAME language as the LAST player sentence, regardless of the conversation history. ### take care with the cache in cases where the player switches languages for similar sentences.\n\n"
+    END_OF_SYSTEM
+    
     START_OF_USER
-    "Translate the game response to the SAME language the player used.\n\n"
+    "Player input: look at castle\n"
+    "Game response: You see a tall castle\n"
+    "Respond:" END_OF_USER
+    START_OF_ASSISTANT
+    "You see a ridiculously tall castle. Compensating for something?" END_OF_ASSISTANT
+    
+    START_OF_USER
+    "Player input: mira el castillo\n"
+    "Game response: You see a tall castle\n"
+    "Respond:" END_OF_USER
+    START_OF_ASSISTANT
+    "Ves un castillo ridículamente alto. ¿Compensando algo?" END_OF_ASSISTANT
+    
+    START_OF_USER
+    "Player input: open door\n"
+    "Game response: The door is locked\n"
+    "Respond:" END_OF_USER
+    START_OF_ASSISTANT
+    "The door is locked. Shocking, right?" END_OF_ASSISTANT
+    
+    START_OF_USER
+    "Player input: regarde le château\n"
+    "Game response: You see a tall castle\n"
+    "Respond:" END_OF_ASSISTANT
+    START_OF_ASSISTANT
+    "Tu vois un château ridiculement haut. Il compense quelque chose?" END_OF_ASSISTANT
+    
+    START_OF_USER
     "Player input: %s\n"
-    "Game response (English): %s\n"
-    "%s"
-    "If player wrote in Spanish, respond in Spanish. If English, respond in English.\n"
-    "Be creative, use humor and sarcasm. Output ONLY the translated response:" END_OF_USER
+    "Game response: %s\n"
+    "--- REMEMBER: Respond in the Player Input language ---" // Nuevo refuerzo aquí
+    "Respond:" END_OF_USER
     START_OF_ASSISTANT;
 
 /* Prompt for SEMANTIC mode - matches input meaning with expected command */
