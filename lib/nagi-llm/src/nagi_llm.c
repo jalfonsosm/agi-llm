@@ -7,6 +7,8 @@
 #include <string.h>
 #include <stdarg.h>
 #include <ctype.h>
+#include <time.h>
+#include <stdint.h>
 #include "../include/llm_utils.h"
 #include "llama.h"
 
@@ -181,19 +183,27 @@ int nagi_llm_init(nagi_llm_t *llm,
         return 0;
     }
 
+    /* Random seed for variety */
+    uint32_t seed = (uint32_t)time(NULL) ^ (uint32_t)((uintptr_t)state);
+    
     /* Create sampler for extraction/semantic (deterministic) */
     state->sampler = llama_sampler_chain_init(llama_sampler_chain_default_params());
     llama_sampler_chain_add(state->sampler, llama_sampler_init_top_k(llm->config.top_k));
     llama_sampler_chain_add(state->sampler, llama_sampler_init_top_p(llm->config.top_p, 1));
     llama_sampler_chain_add(state->sampler, llama_sampler_init_temp(llm->config.temperature));
-    llama_sampler_chain_add(state->sampler, llama_sampler_init_dist(42));
+    llama_sampler_chain_add(state->sampler, llama_sampler_init_dist(seed));
 
-    /* Create sampler for response generation (creative) */
+    /* Create sampler for response generation (creative with randomized temperature) */
+    float creative_temp = 0.7f + ((float)(seed % 30) / 100.0f);  /* 0.7 to 0.99 */
     state->sampler_creative = llama_sampler_chain_init(llama_sampler_chain_default_params());
     llama_sampler_chain_add(state->sampler_creative, llama_sampler_init_top_k(40));
     llama_sampler_chain_add(state->sampler_creative, llama_sampler_init_top_p(0.9f, 1));
-    llama_sampler_chain_add(state->sampler_creative, llama_sampler_init_temp(0.7f));
-    llama_sampler_chain_add(state->sampler_creative, llama_sampler_init_dist(42));
+    llama_sampler_chain_add(state->sampler_creative, llama_sampler_init_temp(creative_temp));
+    llama_sampler_chain_add(state->sampler_creative, llama_sampler_init_dist(seed + 1));
+    
+    if (llm->config.verbose) {
+        printf("LLM Sampler: seed=%u, creative_temp=%.2f\n", seed, creative_temp);
+    }
 
     state->initialized = 1;
     state->seq_counter = 0;
