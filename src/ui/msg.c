@@ -155,34 +155,24 @@ int message_box(const char *var8)
 	const char *display_msg = var8;
 
 #ifdef NAGI_ENABLE_LLM
-	/* Cache translated messages to avoid recalculating on every tick */
 	static char last_original[600] = {0};
 	static char translated_msg[600] = {0};
 	static int translation_cached = 0;
 
-	/* Check if this is a new message or the same one being redrawn */
 	if (nagi_llm_ready(g_llm) && var8 && var8[0] != '\0') {
-		/* If message changed, translate it */
 		if (!translation_cached || strcmp(var8, last_original) != 0) {
 			const char *user_input = llm_context_get_last_player_input();
-
-			/* Only translate if we have user input (not menu/system messages) */
-			if (user_input && user_input[0] != '\0') {
-				int len = nagi_llm_generate_response(g_llm, var8, user_input,
-				                                      translated_msg, sizeof(translated_msg));
-				if (len > 0) {
-					/* Cache successful translation */
-					strncpy(last_original, var8, sizeof(last_original) - 1);
-					last_original[sizeof(last_original) - 1] = '\0';
-					translation_cached = 1;
-					display_msg = translated_msg;
-				} else {
-					/* Translation failed, use original */
-					display_msg = var8;
-				}
+			int len = nagi_llm_generate_response(g_llm, var8, user_input ? user_input : "",
+			                                      translated_msg, sizeof(translated_msg));
+			if (len > 0) {
+				strncpy(last_original, var8, sizeof(last_original) - 1);
+				last_original[sizeof(last_original) - 1] = '\0';
+				translation_cached = 1;
+				display_msg = translated_msg;
+			} else {
+				display_msg = var8;
 			}
 		} else {
-			/* Same message, use cached translation */
 			display_msg = translated_msg;
 		}
 	}

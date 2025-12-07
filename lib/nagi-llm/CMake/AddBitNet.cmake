@@ -28,7 +28,7 @@ if(NAGI_LLM_ENABLE_BITNET)
     # === APPLE SILICON FIX: Disable problematic LLVM optimization ===
     if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
         # Use -O2 for both Debug and Release to avoid LLVM bug
-        set(BITNET_OPT_FLAGS "-O2 -mllvm -disable-interleaved-load-combine")
+        set(BITNET_OPT_FLAGS "-O2 -mllvm -disable-interleaved-load-combine -march=native -mtune=native -ffast-math")
         message(STATUS "BitNet: Apple Silicon detected, applying LLVM workaround")
         message(STATUS "BitNet: Using ${BITNET_OPT_FLAGS} to prevent compilation hangs")
     else()
@@ -36,7 +36,7 @@ if(NAGI_LLM_ENABLE_BITNET)
             set(BITNET_OPT_FLAGS "-O2")
             message(STATUS "BitNet: Using -O2 optimization (faster compilation for Debug)")
         else()
-            set(BITNET_OPT_FLAGS "-O3")
+            set(BITNET_OPT_FLAGS "-O3 -march=native -mtune=native -ffast-math -funroll-loops")
             message(STATUS "BitNet: Using -O3 optimization (maximum performance for Release)")
         endif()
     endif()
@@ -75,12 +75,16 @@ if(NAGI_LLM_ENABLE_BITNET)
         -DGGML_BITNET_X86_TL2=${BITNET_X86_TL2}
         -DGGML_ACCELERATE=ON
         -DGGML_METAL=OFF
+        -DGGML_NATIVE=ON
         -DBUILD_SHARED_LIBS=OFF
         -DCMAKE_C_COMPILER=${BITNET_C_COMPILER}
         -DCMAKE_CXX_COMPILER=${BITNET_CXX_COMPILER}
+        -DCMAKE_C_FLAGS="${BITNET_OPT_FLAGS}"
+        -DCMAKE_C_FLAGS_DEBUG=${BITNET_OPT_FLAGS}
+        -DCMAKE_C_FLAGS_RELEASE=${BITNET_OPT_FLAGS}
+        -DCMAKE_CXX_FLAGS="${BITNET_OPT_FLAGS}"
         -DCMAKE_CXX_FLAGS_DEBUG=${BITNET_OPT_FLAGS}
         -DCMAKE_CXX_FLAGS_RELEASE=${BITNET_OPT_FLAGS}
-        -DCMAKE_C_FLAGS=${BITNET_OPT_FLAGS}
     )
 
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)")
@@ -88,7 +92,6 @@ if(NAGI_LLM_ENABLE_BITNET)
             -DCMAKE_OSX_ARCHITECTURES=arm64
         )
     endif()
-
 
     # Common patch to add GGUF model support to setup_env.py
     set(BITNET_COMMON_PATCH
@@ -122,7 +125,6 @@ if(NAGI_LLM_ENABLE_BITNET)
     set(BITNET_PATCH_CMD ${BITNET_COMMON_PATCH} ${BITNET_PLATFORM_PATCH})
 
     # Select BitNet model for setup (needed to generate kernels)
-    # set(BITNET_HF_MODEL "1bitLLM/bitnet_b1_58-large")
     set(BITNET_HF_MODEL "microsoft/BitNet-b1.58-2B-4T-gguf")
     # set(BITNET_HF_MODEL "tiiuae/Falcon3-1B-Instruct-1.58bit")
     # set(BITNET_HF_MODEL "1bitLLM/bitnet_b1_58-3B")
