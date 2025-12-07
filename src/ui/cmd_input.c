@@ -113,7 +113,7 @@ static void input_put_char(u16 key_char)
 	if ( msgstate.dialogue_open != 0)
 		max = 0x24;
 	else
-		max = 0x28 - strlen(state.string[0]); // the first string is the ">" thing?
+		max = 0x28 - strlen(state.string[0]);
 	if (state.cursor != 0)
 		max--;
 	if ( state.var[V24_INPUTLEN] < max)
@@ -123,7 +123,7 @@ static void input_put_char(u16 key_char)
 
 	switch (key_char)
 	{
-		case 8:	// backspace
+		case 8:
 			if ( input_cur != 0) 
 			{
 				input_cur --;
@@ -136,7 +136,7 @@ static void input_put_char(u16 key_char)
 		case 10:
 			break;
 		
-		case 13:	// enter
+		case 13:
 			if ( input_cur != 0) 
 			{
 				strcpy(input_prev, input);
@@ -148,13 +148,30 @@ static void input_put_char(u16 key_char)
 			break;
 			
 		default:
-			if (  (max > input_cur) && (key_char != 0)  )
+			if (key_char != 0 && key_char < 0x10000 && max > input_cur)
 			{
-				input[input_cur] = key_char;
-				input_cur++;
-				input[input_cur] = 0;
-				window_put_char(key_char);
-				ch_update();
+				char utf8[5];
+				int len = 0;
+				if (key_char < 0x80) {
+					utf8[len++] = key_char;
+				} else if (key_char < 0x800) {
+					utf8[len++] = 0xC0 | (key_char >> 6);
+					utf8[len++] = 0x80 | (key_char & 0x3F);
+				} else {
+					utf8[len++] = 0xE0 | (key_char >> 12);
+					utf8[len++] = 0x80 | ((key_char >> 6) & 0x3F);
+					utf8[len++] = 0x80 | (key_char & 0x3F);
+				}
+				utf8[len] = 0;
+				
+				if (input_cur + len < max)
+				{
+					for (int i = 0; i < len; i++)
+						input[input_cur++] = utf8[i];
+					input[input_cur] = 0;
+					window_put_char(key_char);
+					ch_update();
+				}
 			}
 	}
 

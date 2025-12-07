@@ -247,17 +247,13 @@ static AGI_EVENT *event_key_down(SDL_Keycode keycode, SDL_Keymod mod)
 
 static AGI_EVENT *event_text_input(const char *text)
 {
-	// SDL Text Input Events are unicode strings. We only care about
-	// ASCII characters right now, so ignore anything that isn't a
-	// 7 bit ascii.
-
 	utf8_decode_init((char *)text, strlen(text));
 	for(;;) {
 		int ch = utf8_decode_next();
 		if (ch == UTF8_END) { break; }
 		if (ch == UTF8_ERROR) { break; }
 		if (ch <= 0) { break; }
-		if ((ch & 0x7f) == ch) {
+		if (ch < 0x10000) {
 			AGI_EVENT *agi_event = &passed_agi_event;
 			agi_event->type = 1;
 			agi_event->data = ch;
