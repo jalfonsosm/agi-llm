@@ -81,12 +81,6 @@ endif()
 include(AddSDL3)
 include(AddSDL3_ttf)
 
-# Configure llama.cpp (before adding nagi-llm so variables are available)
-include(AddLlamaCpp)
-
-# Configure BitNet.cpp (if enabled)
-include(AddBitNet)
-
 # Add NAGI-LLM library (abstract LLM interface)
 add_subdirectory(lib/nagi-llm)
 

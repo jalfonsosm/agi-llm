@@ -15,6 +15,16 @@ if(NAGI_LLM_ENABLE_BITNET)
         message(STATUS "BitNet: x86 platform detected, enabling TL2 kernels")
     endif()
 
+    message(STATUS "Configuring for BitNet/ChatML prompts.")
+    target_compile_definitions(YourProjectTarget PRIVATE
+        START_OF_SYSTEM=""
+        END_OF_SYSTEM=""
+        START_OF_USER="<|start_header_id|>user<|end_header_id|>\n"
+        END_OF_USER="<|eot_id|>\n"
+        START_OF_ASSISTANT="<|start_header_id|>assistant<|end_header_id|>\n"
+        END_OF_ASSISTANT="<|eot_id|>\n"
+    )
+
     # === APPLE SILICON FIX: Disable problematic LLVM optimization ===
     if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
         # Use -O2 for both Debug and Release to avoid LLVM bug

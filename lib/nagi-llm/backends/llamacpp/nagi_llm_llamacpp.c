@@ -6,7 +6,7 @@
  * NOTE: This file requires llama.cpp to be linked.
  */
 
- #include <stdio.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -14,112 +14,13 @@
 #include <stdbool.h>
 
 #include "nagi_llm_llamacpp.h"
-#include "../../include/nagi_llm_context.h"
+// #include "../../include/nagi_llm_context.h"
 #include "llm_utils.h"
 
 #include "llama.h"
 
 #include <stdint.h>
 #include <stddef.h>
-
-
-/* Prompt template for EXTRACTION mode - will be filled with game vocabulary */
-static const char *EXTRACTION_PROMPT_TEMPLATE =
-    "<|user|>\n"
-    "Translate to English using these verbs: %s\n"
-    "Input: mira el castillo<|end|>\n"
-    "<|assistant|>\n"
-    "look castle<|end|>\n"
-    "<|user|>\n"
-    "Translate to English using these verbs: %s\n"
-    "Input: coge la llave<|end|>\n"
-    "<|assistant|>\n"
-    "get key<|end|>\n"
-    "<|user|>\n"
-    "Translate to English using these verbs: %s\n"
-    "Input: %s<|end|>\n"
-    "<|assistant|>\n";
-
-/* Fallback prompt when dictionary not available */
-static const char *EXTRACTION_PROMPT_SIMPLE =
-    "<|user|>\n"
-    "Translate to English (verb noun only):\n"
-    "mira el castillo<|end|>\n"
-    "<|assistant|>\n"
-    "look castle<|end|>\n"
-    "<|user|>\n"
-    "Translate to English (verb noun only):\n"
-    "coge la llave<|end|>\n"
-    "<|assistant|>\n"
-    "get key<|end|>\n"
-    "<|user|>\n"
-    "Translate to English (verb noun only):\n"
-    "%s<|end|>\n"
-    "<|assistant|>\n";
-
-/* Prompt for response generation - translates game response to user's language */
-static const char *RESPONSE_GENERATION_PROMPT =
-    "<|user|>\n"
-    "You are a text adventure game narrator. Translate ONLY the game response to match "
-    "the exact language the player used. Do NOT include any context information in your answer.\n\n"
-    "Player said: %s\n"
-    "Game responded: %s\n"
-    "%s\n"  /* Optional context - for information only */
-    "Translate ONLY the game response above to the player's language (Spanish, English, etc.). "
-    "Output only the translated text, nothing else:<|end|>\n"
-    "<|assistant|>\n";
-
-/* Prompt for SEMANTIC mode - matches input meaning with expected command */
-static const char *SEMANTIC_MATCHING_PROMPT =
-    "<|system|>\n"
-    "You are a command matcher for a text adventure game. Your job is to determine if a user's input "
-    "(in any language) has the same meaning as a specific game command (in English).\n\n"
-    "Rules:\n"
-    "- If the input means the same action as the expected command, answer 'yes'\n"
-    "- If the input means something different, answer 'no'\n"
-    "- Only answer with 'yes' or 'no', nothing else\n"
-    "<|end|>\n"
-    "<|user|>\n"
-    "Expected command: look castle\n"
-    "User input: mira el castillo\n"
-    "Does the input match the command?<|end|>\n"
-    "<|assistant|>\n"
-    "yes<|end|>\n"
-    "<|user|>\n"
-    "Expected command: get key\n"
-    "User input: coge la llave\n"
-    "Does the input match the command?<|end|>\n"
-    "<|assistant|>\n"
-    "yes<|end|>\n"
-    "<|user|>\n"
-    "Expected command: open door\n"
-    "User input: abrir puerta\n"
-    "Does the input match the command?<|end|>\n"
-    "<|assistant|>\n"
-    "yes<|end|>\n"
-    "<|user|>\n"
-    "Expected command: quit\n"
-    "User input: mira el castillo\n"
-    "Does the input match the command?<|end|>\n"
-    "<|assistant|>\n"
-    "no<|end|>\n"
-    "<|user|>\n"
-    "Expected command: fast\n"
-    "User input: mira el castillo\n"
-    "Does the input match the command?<|end|>\n"
-    "<|assistant|>\n"
-    "no<|end|>\n"
-    "<|user|>\n"
-    "Expected command: restore game\n"
-    "User input: mirar castillo\n"
-    "Does the input match the command?<|end|>\n"
-    "<|assistant|>\n"
-    "no<|end|>\n"
-    "<|user|>\n"
-    "Expected command: %s\n"
-    "User input: %s\n"
-    "Does the input match the command?<|end|>\n"
-    "<|assistant|>\n";
 
 /*
  * Helper: Check whether an input matches an expected AGI word list

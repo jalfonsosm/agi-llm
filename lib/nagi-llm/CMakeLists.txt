@@ -2,9 +2,12 @@
 cmake_minimum_required(VERSION 3.15)
 project(nagi-llm VERSION 1.0.0 LANGUAGES C)
 
-
 # Create library
 add_library(nagi-llm STATIC)
+
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/CMake")
+include(AddLlamaCpp)
+include(AddBitNet)
 
 set_target_properties(nagi-llm PROPERTIES
     C_STANDARD 11

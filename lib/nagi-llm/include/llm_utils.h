@@ -3,6 +3,130 @@
 
 #include <stdio.h>
 
+#ifndef START_OF_SYSTEM
+#define START_OF_SYSTEM "<start_of_system>\\n"
+#endif
+
+#ifndef END_OF_SYSTEM
+#define END_OF_SYSTEM "<end_of_system>\\n"
+#endif
+
+#ifndef START_OF_USER
+#define START_OF_USER "<start_of_user>\\n"
+#endif
+
+#ifndef END_OF_USER
+#define END_OF_USER "<end_of_user>\\n"
+#endif
+
+#ifndef START_OF_ASSISTANT
+#define START_OF_ASSISTANT "<start_of_assistant>\\n"
+#endif
+
+#ifndef END_OF_ASSISTANT
+
+#define END_OF_ASSISTANT "<end_of_assistant>\\n"
+#endif
+
+/* Prompt template for EXTRACTION mode - will be filled with game vocabulary */
+static const char *EXTRACTION_PROMPT_TEMPLATE =
+    START_OF_USER
+    "Translate to English using these verbs: %s\n"
+    "Input: mira el castillo" END_OF_USER
+    START_OF_ASSISTANT
+    "look castle" END_OF_ASSISTANT
+    START_OF_USER
+    "Translate to English using these verbs: %s\n"
+    "Input: coge la llave" END_OF_USER
+    START_OF_ASSISTANT
+    "get key" END_OF_ASSISTANT
+    START_OF_USER
+    "Translate to English using these verbs: %s\n"
+    "Input: %s" END_OF_USER
+    START_OF_ASSISTANT;
+
+/* Fallback prompt when dictionary not available */
+static const char *EXTRACTION_PROMPT_SIMPLE =
+    START_OF_USER
+    "Translate to English (verb noun only):\n"
+    "mira el castillo" END_OF_USER
+    START_OF_ASSISTANT
+    "look castle" END_OF_ASSISTANT
+    START_OF_USER
+    "Translate to English (verb noun only):\n"
+    "coge la llave" END_OF_USER
+    START_OF_ASSISTANT
+    "get key" END_OF_ASSISTANT
+    START_OF_USER
+    "Translate to English (verb noun only):\n"
+    "%s" END_OF_USER
+    START_OF_ASSISTANT;
+
+/* Prompt for response generation - translates game response to user's language */
+static const char *RESPONSE_GENERATION_PROMPT =
+    START_OF_USER
+    "You are a text adventure game narrator. Translate ONLY the game response to match "
+    "Use satirical responses, use irony, sarcasm, jokes and humor, be creative and imaginative\n"
+    "the exact language the player used. Do NOT include any context information in your answer.\n\n"
+    "Player said: %s\n"
+    "Game responded: %s\n"
+    "%s\n"  /* Optional context - for information only */
+    "Translate ONLY the game response above to the player's language (Spanish, English, etc.). "
+    "Output only the translated text, nothing else:" END_OF_USER
+    START_OF_ASSISTANT;
+
+/* Prompt for SEMANTIC mode - matches input meaning with expected command */
+static const char *SEMANTIC_MATCHING_PROMPT =
+    START_OF_SYSTEM
+    "You are a command matcher for a text adventure game. Your job is to determine if a user's input "
+    "(in any language) has the same meaning as a specific game command (in English).\n\n"
+    "Rules:\n"
+    "- If the input means the same action as the expected command, answer 'yes'\n"
+    "- If the input means something different, answer 'no'\n"
+    "- Only answer with 'yes' or 'no', nothing else\n"
+    END_OF_SYSTEM
+    START_OF_USER
+    "Expected command: look castle\n"
+    "User input: mira el castillo\n"
+    "Does the input match the command?" END_OF_USER
+    START_OF_ASSISTANT
+    "yes" END_OF_ASSISTANT
+    START_OF_USER
+    "Expected command: get key\n"
+    "User input: coge la llave\n"
+    "Does the input match the command?" END_OF_USER
+    START_OF_ASSISTANT
+    "yes" END_OF_ASSISTANT
+    START_OF_USER
+    "Expected command: open door\n"
+    "User input: abrir puerta\n"
+    "Does the input match the command?" END_OF_USER
+    START_OF_ASSISTANT
+    "yes" END_OF_ASSISTANT
+    START_OF_USER
+    "Expected command: quit\n"
+    "User input: mira el castillo\n"
+    "Does the input match the command?" END_OF_USER
+    START_OF_ASSISTANT
+    "no" END_OF_ASSISTANT
+    START_OF_USER
+    "Expected command: fast\n"
+    "User input: mira el castillo\n"
+    "Does the input match the command?" END_OF_USER
+    START_OF_ASSISTANT
+    "no" END_OF_ASSISTANT   
+    START_OF_USER
+    "Expected command: restore game\n"
+    "User input: mirar castillo\n"
+    "Does the input match the command?" END_OF_USER
+    START_OF_ASSISTANT
+    "no" END_OF_ASSISTANT
+    START_OF_USER
+    "Expected command: %s\n"
+    "User input: %s\n"
+    "Does the input match the command?" END_OF_USER
+    START_OF_ASSISTANT;
+
 /* Forward declaration */
 typedef struct nagi_llm nagi_llm_t;
 
@@ -23,123 +147,5 @@ const char *get_word_string(nagi_llm_t *llm, int word_id);
  * Extracts first 40-50 words which are typically verbs in AGI games
  */
 const char *extract_game_verbs(nagi_llm_t *llm);
-
-// /* Extract game verbs from dictionary */
-// static const char *extract_game_verbs_new(llm_state_t *state)
-// {
-//     static char verbs_buf[1024];
-//     const u8 *dict_data;
-//     u16 offsets[26];
-//     int verb_count;
-//     int i;
-//     size_t current_len = 0;
-//     char current_word[128];
-//     int current_word_len = 0;
-
-//     if (!state || !state->dictionary_data) {
-//         return NULL;
-//     }
-
-//     dict_data = state->dictionary_data;
-
-//     /* Read 26 letter offsets (52 bytes header) */
-//     for (i = 0; i < 26; i++) {
-//         offsets[i] = load_be_16(dict_data + i * 2);
-//     }
-
-//     /* Extract words (first ~30 words to give context) */
-//     verbs_buf[0] = '\0';
-//     verb_count = 0;
-//     current_len = 0;
-
-//     /* Iterate through letter blocks */
-//     for (i = 0; i < 26 && verb_count < 30; i++) {
-//         u16 offset = offsets[i];
-//         if (offset == 0 || offset >= state->dictionary_size) continue;
-
-//         const u8 *word_ptr = dict_data + offset;
-        
-//         /* Reset current word for new letter block? 
-//            Actually AGI dictionary resets prefix for each letter block usually?
-//            Let's assume yes or that prefix_len=0 for first word. */
-//         current_word_len = 0;
-
-//         /* Scan words in this block */
-//         /* We'll scan a few words from each letter to get a mix */
-//         int words_in_letter = 0;
-        
-//         while (words_in_letter < 5 && verb_count < 30) {
-//             /* Check bounds */
-//             if ((size_t)(word_ptr - dict_data) >= state->dictionary_size) break;
-
-//             /* Read prefix length */
-//             u8 prefix_len = *word_ptr++;
-            
-//             /* Safety check for prefix length */
-//             if (prefix_len > current_word_len) prefix_len = current_word_len;
-//             current_word_len = prefix_len;
-
-//             /* Read characters */
-//             while (1) {
-//                 if ((size_t)(word_ptr - dict_data) >= state->dictionary_size) break;
-                
-//                 u8 c_enc = *word_ptr++;
-//                 u8 c_dec = (c_enc & 0x7F) ^ 0x7F;
-                
-//                 if (current_word_len < sizeof(current_word) - 1) {
-//                     current_word[current_word_len++] = (char)c_dec;
-//                 }
-                
-//                 if (c_enc & 0x80) {
-//                     /* End of word */
-//                     break;
-//                 }
-//             }
-//             current_word[current_word_len] = '\0';
-
-//             /* Read Word ID */
-//             if ((size_t)(word_ptr - dict_data) + 2 > state->dictionary_size) break;
-//             u16 word_id = load_be_16(word_ptr);
-//             word_ptr += 2;
-
-//             /* Add to list if it's a valid word and not too short */
-//             if (current_word_len > 1) {
-//                 /* Sanitize just in case */
-//                 int valid = 1;
-//                 for (int k = 0; k < current_word_len; k++) {
-//                     if (!isprint(current_word[k]) && current_word[k] != ' ') {
-//                         valid = 0; 
-//                         break;
-//                     }
-//                 }
-
-//                 if (valid) {
-//                     size_t needed = current_word_len + (verb_count > 0 ? 2 : 0) + 1;
-//                     if (current_len + needed < sizeof(verbs_buf)) {
-//                         if (verb_count > 0) {
-//                             strcat(verbs_buf, ", ");
-//                             current_len += 2;
-//                         }
-//                         strcat(verbs_buf, current_word);
-//                         current_len += current_word_len;
-//                         verb_count++;
-//                     } else {
-//                         /* Buffer full */
-//                         return verbs_buf;
-//                     }
-//                 }
-//             }
-            
-//             words_in_letter++;
-            
-//             /* Check if we reached end of block? 
-//                AGI dictionary doesn't have explicit end of block, 
-//                it just goes until next offset? 
-//                Or maybe we just stop after N words. */
-//         }
-//     }
-
-//     return verbs_buf[0] != '\0' ? verbs_buf : NULL;
-// }
 
 #endif /* LLM_UTILS_H */
