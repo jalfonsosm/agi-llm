@@ -16,13 +16,13 @@ if(NAGI_LLM_ENABLE_BITNET)
     endif()
 
     message(STATUS "Configuring for BitNet/ChatML prompts.")
-    target_compile_definitions(YourProjectTarget PRIVATE
+    target_compile_definitions(nagi-llm PRIVATE
         START_OF_SYSTEM=""
         END_OF_SYSTEM=""
-        START_OF_USER="<|start_header_id|>user<|end_header_id|>\n"
-        END_OF_USER="<|eot_id|>\n"
-        START_OF_ASSISTANT="<|start_header_id|>assistant<|end_header_id|>\n"
-        END_OF_ASSISTANT="<|eot_id|>\n"
+        START_OF_USER="<|start_header_id|>user<|end_header_id|>\\n"
+        END_OF_USER="<|eot_id|>\\n"
+        START_OF_ASSISTANT="<|start_header_id|>assistant<|end_header_id|>\\n"
+        END_OF_ASSISTANT="<|eot_id|>\\n"
     )
 
     # === APPLE SILICON FIX: Disable problematic LLVM optimization ===
@@ -93,7 +93,7 @@ if(NAGI_LLM_ENABLE_BITNET)
     # Common patch to add GGUF model support to setup_env.py
     set(BITNET_COMMON_PATCH
         COMMAND ${CMAKE_COMMAND} -E echo "BitNet: Patching setup_env.py to support GGUF model download..."
-        COMMAND python3 "${CMAKE_SOURCE_DIR}/CMake/patch_bitnet.py" "<SOURCE_DIR>/setup_env.py"
+        COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/CMake/patch_bitnet.py" "<SOURCE_DIR>/setup_env.py"
     )
 
     if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
