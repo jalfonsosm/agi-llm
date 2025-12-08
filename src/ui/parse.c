@@ -24,7 +24,6 @@ _WordNext                        cseg     00001BE4 00000020
 // byte-order support
 #include "../sys/endian.h"
 
-
 #define WORD_IGNORE 0
 #define WORD_ROL 9999
 #define WORD_ANY 1
@@ -145,10 +144,8 @@ void parse(const char *string)
 	
 	#ifdef NAGI_ENABLE_LLM
 	if (nagi_llm_ready(g_llm) && word_total == 0 && state.var[V09_BADWORD] == 0) {
-		char llm_response[600];
-		int len = nagi_llm_generate_response(g_llm, 
-			"The player said something that is not a game command. Respond naturally and in character.",
-			string, llm_response, sizeof(llm_response));
+		static char llm_response[600];
+		int len = nagi_llm_generate_response(g_llm, DEFAULT_RESPONSE_GENERATION_PROMPT, string, llm_response, sizeof(llm_response));
 		if (len > 0) {
 			extern int message_box(const char *);
 			message_box(llm_response);

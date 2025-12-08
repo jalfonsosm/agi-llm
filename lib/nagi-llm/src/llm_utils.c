@@ -8,6 +8,11 @@
 #include "../include/nagi_llm.h"
 #include "../include/llm_utils.h"
 
+/* Endian conversion function (big-endian to host) */
+static u16 load_be_16(const u8 *ptr) {
+    return (u16)((ptr[0] << 8) | ptr[1]);
+}
+
 /*
  * Get word string from word ID
  *

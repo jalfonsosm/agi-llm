@@ -14,7 +14,6 @@
 #include <stdbool.h>
 
 #include "nagi_llm_llamacpp.h"
-// #include "../../include/nagi_llm_context.h"
 #include "llm_utils.h"
 
 #include "llama.h"

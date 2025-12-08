@@ -152,33 +152,8 @@ int message_box(const char *var8)
 {
 	u32 temp;
 	int ret;
-	const char *display_msg = var8;
 
-#ifdef NAGI_ENABLE_LLM
-	static char last_original[600] = {0};
-	static char translated_msg[600] = {0};
-	static int translation_cached = 0;
-
-	if (nagi_llm_ready(g_llm) && var8 && var8[0] != '\0') {
-		if (!translation_cached || strcmp(var8, last_original) != 0) {
-			const char *user_input = llm_context_get_last_player_input();
-			int len = nagi_llm_generate_response(g_llm, var8, user_input ? user_input : "",
-			                                      translated_msg, sizeof(translated_msg));
-			if (len > 0) {
-				strncpy(last_original, var8, sizeof(last_original) - 1);
-				last_original[sizeof(last_original) - 1] = '\0';
-				translation_cached = 1;
-				display_msg = translated_msg;
-			} else {
-				display_msg = var8;
-			}
-		} else {
-			display_msg = translated_msg;
-		}
-	}
-#endif
-
-	message_box_draw(display_msg, 0, 0, 0);
+	message_box_draw(var8, 0, 0, 0);
 
 	if ( flag_test(F15_PRINTMODE) )
 	{
@@ -203,13 +178,6 @@ int message_box(const char *var8)
 
 		cmd_close_window(0);
 
-#ifdef NAGI_ENABLE_LLM
-		/* Clear cache when message box closes */
-		translation_cached = 0;
-		last_original[0] = '\0';
-		translated_msg[0] = '\0';
-#endif
-
 		return ret;
 	}
 }
@@ -222,6 +190,20 @@ int message_box(const char *var8)
 // vare is a toggle... if == 1 then force width and height
 void message_box_draw(const char *str, u16 row, u16 w, u16 toggle)
 {
+#ifdef NAGI_ENABLE_LLM
+	// in message box, we translate previously the message using LLM since there are some size calculations to adapt the box to the text
+	static char translated_msg[600] = {0};
+
+	if (nagi_llm_ready(g_llm) && str && strlen(str) > 0) {
+		const char *user_input = llm_context_get_last_player_input();
+		int len = nagi_llm_generate_response(g_llm, str, user_input ? user_input : "",
+		                                      translated_msg, sizeof(translated_msg));
+		if (len > 0) {
+			str = translated_msg;
+		}
+	}
+#endif
+
 	char msg_err[100];	// 2bc
 	char msg[600];	// 258
 	u16 ax;

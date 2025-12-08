@@ -63,45 +63,67 @@ static const char *EXTRACTION_PROMPT_SIMPLE =
     START_OF_ASSISTANT;
 
 /* Prompt for response generation - translates game response to user's language */
+/* Prompt for response generation - translates game texts to the player's language */
 static const char *RESPONSE_GENERATION_PROMPT =
     START_OF_SYSTEM
-    "You are a witty narrator for a text adventure game. Translate game responses to the player's language with creativity, humor, sarcasm and even irreverence. \n\n"
-    "### LANGUAGE RULE: ALWAYS use the SAME language as the LAST player sentence, regardless of the conversation history. ### take care with the cache in cases where the player switches languages for similar sentences.\n\n"
+    "You are a witty narrator for a text adventure game. Translate game texts to the player's language with creativity, humor, sarcasm and even irreverence. \n\n"
+    "### CRITICAL LANGUAGE RULES ###\n"
+    "1. IF 'Player input' is NOT EMPTY: ALWAYS use the language of the 'Player input'.\n"
+    "2. IF 'Player input' IS EMPTY (Automatic Event/System Command): You MUST use the language of the LAST 'Respond:' in the conversation history to maintain continuity.\n"
+    "3. Take care with translation cache in cases where the player switches languages for similar sentences.\n\n"
     END_OF_SYSTEM
     
     START_OF_USER
     "Player input: look at castle\n"
     "Game response: You see a tall castle\n"
-    "Respond:" END_OF_USER
+    "Respond:" 
+    END_OF_USER
     START_OF_ASSISTANT
-    "You see a ridiculously tall castle. Compensating for something?" END_OF_ASSISTANT
+    "You see a ridiculously tall castle. Compensating for something?" 
+    END_OF_ASSISTANT
     
     START_OF_USER
     "Player input: mira el castillo\n"
     "Game response: You see a tall castle\n"
-    "Respond:" END_OF_USER
+    "Respond:" 
+    END_OF_USER
     START_OF_ASSISTANT
-    "Ves un castillo ridículamente alto. ¿Compensando algo?" END_OF_ASSISTANT
+    "Ves un castillo ridículamente alto. ¿Compensando algo?" 
+    END_OF_ASSISTANT
+    
+    START_OF_USER
+    "Player input: \n"
+    "Game response: A strong gust of wind blows past you.\n"
+    "Respond:" 
+    END_OF_USER
+    START_OF_ASSISTANT
+    "Una fuerte ráfaga de viento pasa a tu lado. ¿En serio creíste que podrías caminar sin despeinarte?" 
+    END_OF_ASSISTANT
     
     START_OF_USER
     "Player input: open door\n"
     "Game response: The door is locked\n"
-    "Respond:" END_OF_USER
+    "Respond:" 
+    END_OF_USER
     START_OF_ASSISTANT
-    "The door is locked. Shocking, right?" END_OF_ASSISTANT
+    "The door is locked. Shocking, right?" 
+    END_OF_ASSISTANT
     
     START_OF_USER
     "Player input: regarde le château\n"
     "Game response: You see a tall castle\n"
-    "Respond:" END_OF_ASSISTANT
+    "Respond:" 
+    END_OF_USER
     START_OF_ASSISTANT
-    "Tu vois un château ridiculement haut. Il compense quelque chose?" END_OF_ASSISTANT
+    "Tu vois un château ridiculement haut. Il compense quelque chose?" 
+    END_OF_ASSISTANT
     
     START_OF_USER
     "Player input: %s\n"
     "Game response: %s\n"
-    "--- REMEMBER: Respond in the Player Input language ---" // Nuevo refuerzo aquí
-    "Respond:" END_OF_USER
+    "--- CRITICAL: REMEMBER: Respond in the Player Input language, but if Player input is empty, use the language of the LAST 'Respond:' in the history. Don't start repeating the player input or game response. ---"
+    "Respond:" 
+    END_OF_USER
     START_OF_ASSISTANT;
 
 /* Prompt for SEMANTIC mode - matches input meaning with expected command */
@@ -158,11 +180,6 @@ static const char *SEMANTIC_MATCHING_PROMPT =
 
 /* Forward declaration */
 typedef struct nagi_llm nagi_llm_t;
-
-/* Endian conversion function (big-endian to host) */
-static inline u16 load_be_16(const u8 *ptr) {
-    return (u16)((ptr[0] << 8) | ptr[1]);
-}
 
 /*
  * Get word string from word ID

@@ -33,6 +33,9 @@ typedef unsigned int u32;
 #define NAGI_LLM_DEFAULT_U_BATCH_SIZE 512
 #define NAGI_LLM_DEFAULT_THREADS 4
 
+static const char *DEFAULT_RESPONSE_GENERATION_PROMPT =
+    "The player said something that is not a game command. Respond naturally and in character, using the same language as the last player input.\n";
+
 /*
  * LLM operation modes
  */

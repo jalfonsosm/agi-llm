@@ -395,15 +395,6 @@ void ch_put(u32 ch)
 			text[3] = (char)(0x80 | (ch & 0x3F));
 			text[4] = '\0';
 		}
-		
-		/* Debug: print non-ASCII characters */
-		if (ch > 127) {
-			printf("ch_put: Unicode U+%04X -> UTF-8: ", ch);
-			for (int i = 0; text[i]; i++) {
-				printf("%02X ", (unsigned char)text[i]);
-			}
-			printf("\n");
-		}
 
 		/* Get font metrics for proper baseline positioning */
 		font_ascent = TTF_GetFontAscent(ttf_font);
