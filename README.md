@@ -1,183 +1,188 @@
-# NAGI Source
+# NAGI Source + LLM Experiment
 
-**By Nick Sonneveld**
+**Original by Nick Sonneveld**  
+**LLM Integration Experiment by Juan Alfonso Sierra**
 
+## Introduction
 
-### Introduction
+This is an experimental fork of NAGI (New Adventure Game Interpreter) that explores integrating Large Language Models (LLMs) into classic Sierra AGI adventure games.
 
-This is the public release of the NAGI source code.
+NAGI is a clone of Sierra's AGI interpreter used in the 80's for games like Space Quest, Leisure Suit Larry, and King's Quest. This fork adds **experimental LLM support** to enable:
+- Natural language input in any language
+- AI-powered response generation
+- Multilingual gameplay
 
-NAGI (New Adventure Game Interpreter) is a clone of Sierra's own AGI which
-they created and used through the 80's to produce a whole bunch of great
-adventure games like Space Quest, Leisure Suit Larry and Kings Quest. NAGI was
-created by disassembling the original AGI executable and writing equivalent C
-code that would run under SDL which is a free generic library for low-level
-access to graphics and audio. It can read both v2 and v3 game data for the PC.
+**⚠️ This is a rapid research prototype to investigate AI integration in retro games. Many improvements remain.**
 
-I am still supporting and working on NAGI!  I just feel it's time to release
-the source code as well.  If you are working on a similiar interpreter or a
-tool to help develop AGI games, then hopefully you'll find some use in the
-NAGI source code.  The original source was released April 18th, 2002.
+## Recent Updates
 
-The current source release supports Linux and some some minor bug fixes!
-Check it out!
+- **SDL3 Support**: Updated from SDL2 to SDL3
+- **LLM Integration**: Added experimental AI-powered natural language processing
+- **Multi-backend**: Support for llama.cpp, BitNet, and Cloud APIs
 
+## Current Developers
 
-### Current Developers:
+  * [Nick Sonneveld][1] - Original NAGI author
+  * [Gareth McMullin][2] - Linux port
+  * [Claudio Matsuoka][3] - Project support
+  * [Ritchie Swann][4] - OS X port, SDL2 upgrade
+  * Juan Alfonso Sierra - LLM integration experiment
 
-  * [Nick Sonneveld][1] - Original author
-  * [Gareth McMullin][2] - Linux port and tweaking
-  * [Claudio Matsuoka][3] - has pledged to support the project.
-  * [Ritchie Swann][4] - OS X port, upgrade to SDL2 and various improvements
+## LLM Features (Experimental)
 
-### License
+### Supported Backends
 
-NAGI's source has been released under the X11 license.  This means you can use
-the source in any project you want and you do not have to provide the source
-if that is your wish.  You have to make sure you acknowledge my copyright and
-you cannot use my name as an endorsement of something else.  No warranties are
-implied either.
+1. **llama.cpp** ✅ - Tested and working
+   - Local inference with GGUF models
+   - GPU acceleration (Metal on macOS)
+   - Models: Llama 3.2 3B, Llama 3.1 8B, Qwen 2.5 7B
 
-The X11 license has been deemed to be [compatible with the GPL license][5].
-For the full license, check out of the bottom of this page.
+2. **BitNet** 🚧 - Prototype (WIP)
+   - 1.58-bit quantized models
+   - Needs optimization (currently slower than expected)
 
+3. **Cloud API** 🚧 - Prototype (WIP)
+   - OpenAI-compatible endpoints
+   - Supports: Cerebras, Groq, OpenAI, local Ollama
 
-###  Systems Supported
+### Known Limitations
 
-  * Windows - NAGI was originally written for Windows using the SDL Library
-  * Linux - a new version, ported by Gareth McMullin
+- **Blocking I/O**: LLM requests block the main game thread. Async implementation would require extensive NAGI refactoring
+- **Model Quality**: Small models (3B-8B params) can produce incoherent responses with high temperature
+- **Performance**: BitNet backend needs optimization
+- **Limited Testing**: Only llama.cpp backend is production-ready
 
+### Future Improvements
 
-### Build Requirements
+**Performance & Architecture:**
+- [ ] Async/non-blocking LLM requests
+- [ ] BitNet performance optimization
 
-In order to successfully build NAGI from the provided source code, you will
-need a suitable toolchain and a suitable SDL2 library.
+**User Experience:**
+- [ ] Speech-to-text input (e.g., sherpa-onnx)
+- [ ] Text-to-speech output
+- [ ] In-game hints system (LLM provides contextual help)
 
-Windows - MinGW / MSYS (www.mingw.org/wiki/msys) provides a suitable toolset
-MacOS - use MacPorts (www.macports.org)
-Linux - most distributions have some way of getting SDL2 installed. See below
+**Model & Context:**
+- [ ] LoRA fine-tuning on AGI game walkthroughs
+- [ ] Better context management using game state
+- [ ] Larger/better models support
+- [ ] Better prompt engineering
 
-### How to Build (Linux/Macos)
+## Build Requirements
 
- * Arch Linux, MinGW : sudo pacman -S libsdl2-dev cmake
- * Debian Linux : sudo apt-get install libsdl2-dev cmake
- * MacPorts : brew install sdl2 cmake
+- CMake 3.14+
+- C compiler (GCC/Clang/MSVC)
+- SDL3 (fetched automatically)
+- CURL (for cloud backend)
 
-Then : mkdir build ; cd build; cmake .. ; make
+### Optional LLM Dependencies
 
-### How to Build (Windows)
+- **llama.cpp**: Built automatically if enabled
+- **BitNet**: Built automatically if enabled
+- **Cloud API**: Only needs CURL
 
- * Install Visual Studio 2019 Community
- * Download SDL2-devel-2.0.14-VC.zip from https://www.libsdl.org/download-2.0.php
- * Decompress SDL2-devel-2.0.14-VC.zip into a directory
- * Add support/sdl2-config.cmake to SDL directory
- * Open nagi directory in Visual Studio as a cmake project
- * Go to Project/CMake Settings for NAGI. Set variable SDL2_DIR to SDL location
- * Build!
+## How to Build
 
-### Suggestions
+### Linux/macOS
 
-These are some things that I planned to work on:
+```bash
+# Basic build (no LLM)
+mkdir build && cd build
+cmake ..
+make
 
-  * New save game format to make it less fragile and compatible across other
-free interpreters
-  * Save menu, controller and thumbnail info in save games
-  * Font scaling
-  * Clean sound code
-  * Optimised x1 x2 graphics scale modes
-  * beeping for agi errors
-  * GUI to configure NAGI options (using wxWindows?)
-  * Links with AGI Studio to aid debugging
-  * MIDI generation
-  * Ability to split ini keys on several lines
-  * Screenshots
-  * Separate ini file in game directory overides main ini
-  * cache of found games
-  * After quitting game, go back to game menu
-  * Dialogue box to enter commands
-  * Selectable gui backgrounds
-  * 256 colour / palette hacks
-  * support for Amiga mouse commands
-  * support for AGInfo's game checksum list
-  * support early interpreter's sprite handling (fix Donald Duck, AGI Trek,
-Xmas demo sprite glitches)
-  * transition screen fades between new rooms
-  * fix windib support (SDL problem?)
-  * joystick support
-  * patches for copy protection
+# With llama.cpp backend (default)
+cmake .. -DNAGI_LLM_ENABLE_LLAMACPP=ON
+make
 
-Hopefully that will give you some ideas if you want to hack NAGI.
+# With BitNet backend
+cmake .. -DNAGI_LLM_ENABLE_BITNET=ON -DNAGI_LLM_ENABLE_LLAMACPP=OFF
+make
 
+# With Cloud API backend
+cmake .. -DNAGI_LLM_ENABLE_CLOUD_API=ON -DNAGI_LLM_ENABLE_LLAMACPP=OFF
+make
+```
 
-### Disassembled Code
+### Model Selection (llama.cpp)
 
-Also in another package are files I used for disassembling NAGI.  Some code,
-before I started writing straight into C, is available here along with files
-that are compatible with the early free DOS version of IDA (interactive
-disassembler).  If you have a legal commercial Windows version, it should be
-able to read them in and convert them.
+Choose model via CMake:
 
-If any of the disassembled comments looks wrong, it possibly is.  I learnt
-proper C and how to read assembler from this project so my initial guesses may
-be wrong.
+```bash
+# Llama 3.2 3B (default, 2.3GB)
+cmake .. -DMODEL_NAME=LLAMA3
 
+# Llama 3.1 8B (better multilingual, 4.9GB)
+cmake .. -DMODEL_NAME=LLAMA3_8B
 
-### Support
+# Qwen 2.5 7B (excellent multilingual, 4.8GB)
+cmake .. -DMODEL_NAME=QWEN2
 
-Send me any emails if you want more information on NAGI or how the source code
-fits together.  As long as it doesn't get too demanding, I won't mind
-answering any questions.
+# Gemma 3 4B
+cmake .. -DMODEL_NAME=GEMMA3
 
+# Phi-3 4B
+cmake .. -DMODEL_NAME=PHI3
+```
 
-### X11 License
+### Cloud API Setup
 
-The license in full: (applies to all source code)
+1. Copy config: `cp cloud_config_example.ini cloud_config.ini`
+2. Get free API key from [Cerebras](https://console.cerebras.ai)
+3. Edit `cloud_config.ini` with your key
+4. Build with cloud backend enabled
 
-    COPYRIGHT AND PERMISSION NOTICE
+## Systems Supported
 
-    Copyright (c) 2001 - 2017 Nick Sonneveld, Gareth McMullin, Ritchie Swann
+- **macOS** (Apple Silicon & Intel)
+- **Linux** (x86_64, ARM64)
+- **Windows** (experimental)
 
-    All rights reserved.
+## License
+
+NAGI's source is released under the X11 license (compatible with GPL).
+
+    Copyright (c) 2001 - 2024 Nick Sonneveld, Gareth McMullin, Ritchie Swann
 
     Permission is hereby granted, free of charge, to any person obtaining a
-    copy of this software and associated documentation files (the
-    "Software"), to deal in the Software without restriction, including
-    without limitation the rights to use, copy, modify, merge, publish,
-    distribute, and/or sell copies of the Software, and to permit persons
-    to whom the Software is furnished to do so, provided that the above
-    copyright notice(s) and this permission notice appear in all copies of
-    the Software and that both the above copyright notice(s) and this
-    permission notice appear in supporting documentation.
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, provided that the above copyright notice(s) and this
+    permission notice appear in all copies of the Software.
 
     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-    OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
-    OF THIRD PARTY RIGHTS. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
-    HOLDERS INCLUDED IN THIS NOTICE BE LIABLE FOR ANY CLAIM, OR ANY SPECIAL
-    INDIRECT OR CONSEQUENTIAL DAMAGES, OR ANY DAMAGES WHATSOEVER RESULTING
-    FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT,
-    NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION
-    WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+    OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF THIRD PARTY RIGHTS.
 
-    Except as contained in this notice, the name of a copyright holder
-    shall not be used in advertising or otherwise to promote the sale, use
-    or other dealings in this Software without prior written authorization
-    of the copyright holder.
+## Acknowledgments
 
-[Nick Sonneveld][6]
+- Original NAGI by Nick Sonneveld
+- SDL3 port contributions
+- llama.cpp by Georgi Gerganov
+- BitNet.cpp team
+- AGI game preservation community
 
+### AI-Assisted Development
 
+This LLM integration was developed with assistance from AI coding tools:
+- Amazon Q Developer
+- Claude (Anthropic)
+- DeepSeek
+- GitHub Copilot
+- Gemini AI (Google)
 
+### Credits
 
-   [1]: mailto:sonneveld.at.hotmail.com
+- **Juan Alfonso Sierra** - LLM integration, architecture, and experimentation
 
-   [2]: mailto:g_mcm.at.mweb.co.za
+---
 
-   [3]: mailto:claudio.at.helllabs.org
+**Note**: This is an experimental research project developed with AI assistance. The LLM integration is a proof-of-concept to explore AI in retro gaming. Production use is not recommended.
 
-   [4]: mailto:ritchieswann@gmail.com
-
-   [5]: http://www.gnu.org/licenses/license-list.html
-
-   [6]: mailto:sonneveld.at.hotmail.com
-
+[1]: mailto:sonneveld.at.hotmail.com
+[2]: mailto:g_mcm.at.mweb.co.za
+[3]: mailto:claudio.at.helllabs.org
+[4]: mailto:ritchieswann@gmail.com
