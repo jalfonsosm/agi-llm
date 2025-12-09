@@ -1,24 +1,36 @@
-# NAGI Source + LLM Experiment
+# AGI-Llama: AI-Enhanced Adventure Game Interpreter
 
-**Original by Nick Sonneveld**  
-**LLM Integration Experiment by Juan Alfonso Sierra**
+**A Modern Fork of NAGI with LLM Integration**
 
-## Introduction
+*Original NAGI by Nick Sonneveld | LLM Integration by Juan Alfonso Sierra*
 
-This is an experimental fork of NAGI (New Adventure Game Interpreter) that explores integrating Large Language Models (LLMs) into classic Sierra AGI adventure games.
+## What is AGI-Llama?
 
-NAGI is a clone of Sierra's AGI interpreter used in the 80's for games like Space Quest, Leisure Suit Larry, and King's Quest. This fork adds **experimental LLM support** to enable:
-- Natural language input in any language
-- AI-powered response generation
-- Multilingual gameplay
+AGI-Llama is an experimental fork of NAGI (New Adventure Game Interpreter) that brings modern AI capabilities to classic 1980s Sierra adventure games. By integrating Large Language Models, it transforms how players interact with beloved titles like Space Quest, King's Quest, and Leisure Suit Larry.
 
-**⚠️ This is a rapid research prototype to investigate AI integration in retro games. Many improvements remain.**
+### Why Fork NAGI?
 
-## Recent Updates
+With extensive modernization including SDL3 support, Unicode text rendering (SDL_ttf), and a complete LLM integration layer, this project has evolved significantly from the original NAGI. The rebranding reflects these substantial changes while honoring the original work.
 
-- **SDL3 Support**: Updated from SDL2 to SDL3
-- **LLM Integration**: Added experimental AI-powered natural language processing
+### Key Features
+
+- 🌍 **Multilingual Gameplay**: Play in any language - Spanish, French, Japanese, etc.
+- 🤖 **Natural Language Input**: Type commands naturally, not just "verb noun"
+- 💬 **AI-Powered Responses**: Game responses translated to your language
+- 🎮 **Original Game Logic**: Preserves authentic AGI game behavior
+- 🖥️ **Modern Stack**: SDL3, Unicode support, GPU acceleration
+
+![AGI-Llama in Action](media/agiEnhanced.gif)
+
+**⚠️ Experimental Research Project**: This is a rapid prototype to investigate AI integration in retro games. Many improvements remain.
+
+## What's New in AGI-Llama?
+
+- **SDL3 Support**: Modernized from SDL2 to SDL3 for better performance
+- **Unicode Text Rendering**: SDL_ttf integration for multilingual display
+- **LLM Integration**: Experimental AI-powered natural language processing
 - **Multi-backend**: Support for llama.cpp, BitNet, and Cloud APIs
+- **Modular Architecture**: Clean separation between game engine and AI layer
 
 ## Current Developers
 

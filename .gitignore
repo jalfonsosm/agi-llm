@@ -28,3 +28,4 @@ __pycache__/
 *$py.class
 *.pyc
 .Python
+cloud_config.ini
