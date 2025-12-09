@@ -20,9 +20,11 @@ With extensive modernization including SDL3 support, Unicode text rendering (SDL
 - 🎮 **Original Game Logic**: Preserves authentic AGI game behavior
 - 🖥️ **Modern Stack**: SDL3, Unicode support, GPU acceleration
 
-![AGI-Llama in Action](media/agiEnhanced.gif)
+![AGI-Llama in Action](./media/agiEnhanced.gif)
 
 **⚠️ Experimental Research Project**: This is a rapid prototype to investigate AI integration in retro games. Many improvements remain.
+
+*Note: If the GIF doesn't display, view it directly at [media/agiEnhanced.gif](media/agiEnhanced.gif)*
 
 ## What's New in AGI-Llama?
 
