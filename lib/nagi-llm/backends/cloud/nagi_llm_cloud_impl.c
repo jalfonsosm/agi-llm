@@ -61,9 +61,9 @@ static int cloud_generate_response(nagi_llm_t *llm, const char *game_response,
         printf("Cloud: Generating response in %s\n", language);
     }
 
-    /* Build prompt with explicit language */
+    /* Build prompt with explicit language, including user input for context */
     snprintf(prompt, sizeof(prompt), RESPONSE_GENERATION_PROMPT,
-             language, game_response);
+             language, user_input ? user_input : "", game_response);
 
     return nagi_llm_cloud_generate(llm, prompt, output, output_size);
 }

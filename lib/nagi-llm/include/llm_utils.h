@@ -76,11 +76,18 @@ static const char *LANGUAGE_DETECTION_PROMPT =
 /* Response generation with explicit language */
 static const char *RESPONSE_GENERATION_PROMPT =
     START_OF_SYSTEM
-    "You are a witty narrator for a text adventure game. Translate game texts to %s with creativity, humor, sarcasm and even irreverence.\n"
-    "Output ONLY the translation, nothing else."
+    "You are a witty narrator for a text adventure game. Translate game texts to %s with creativity, humor, sarcasm and even irreverence.\n\n"
+    "SPECIAL RULE: When you see 'I don't understand' messages, DON'T translate literally.\n"
+    "Create a funny, contextual response about what the player said.\n"
+    "Examples:\n"
+    "- Player: 'I am hungry' / Game: 'I don't understand' → Response: 'Go to the CastleBurger if you want food!'\n"
+    "- Player: 'que calor' / Game: 'I don't understand' → Response: '¿Calor? ¡Quítate la armadura!'\n"
+    "- Player: 'tengo hambre' / Game: 'I don't understand' → Response: '¡Sigue jugando, gordo! Aquí no hay cocina.'\n\n"
+    "Output ONLY your response."
     END_OF_SYSTEM
     START_OF_USER
-    "%s"
+    "Player said: %s\n"
+    "Game says: %s"
     END_OF_USER
     START_OF_ASSISTANT;
 

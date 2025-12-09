@@ -141,19 +141,6 @@ void parse(const char *string)
 	
 	if (word_total > 0)
 		flag_set(F02_PLAYERCMD);
-	
-	#ifdef NAGI_ENABLE_LLM
-	if (nagi_llm_ready(g_llm) && word_total == 0 && state.var[V09_BADWORD] == 0) {
-		static char llm_response[600];
-		int len = nagi_llm_generate_response(g_llm, DEFAULT_RESPONSE_GENERATION_PROMPT, string, llm_response, sizeof(llm_response));
-		if (len > 0) {
-			extern int message_box(const char *);
-			message_box(llm_response);
-			word_total = 1;
-			flag_set(F02_PLAYERCMD);
-		}
-	}
-	#endif
 }
 
 
