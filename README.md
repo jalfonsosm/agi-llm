@@ -24,8 +24,6 @@ With extensive modernization including SDL3 support, Unicode text rendering (SDL
 
 **⚠️ Experimental Research Project**: This is a rapid prototype to investigate AI integration in retro games. Many improvements remain.
 
-*Note: If the GIF doesn't display, view it directly at [media/agiEnhanced.gif](media/agiEnhanced.gif)*
-
 ## What's New in AGI-Llama?
 
 - **SDL3 Support**: Modernized from SDL2 to SDL3 for better performance
