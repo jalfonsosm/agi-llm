@@ -14,6 +14,7 @@
 #include <stdbool.h>
 
 #include "nagi_llm_llamacpp.h"
+#include "../../include/nagi_llm_context.h"
 #include "llm_utils.h"
 
 #include "llama.h"
@@ -228,7 +229,7 @@ static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response
     llm_state_t *state = llm->state;
 
     char prompt[NAGI_LLM_MAX_PROMPT_SIZE];
-    char context_str[512];
+    // char context_str[512];
     int n_tokens, n_prompt_tokens;
     int current_seq;
     int response_len, gen_count, max_response_tokens;
@@ -239,20 +240,31 @@ static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response
     if (!game_response || !user_input || !output || output_size <= 0) return 0;
 
     /* Get context if available */
+    /*
     context_str[0] = '\0';
-    #ifdef NAGI_ENABLE_LLM
     const char *context = llm_context_build();
     if (context && context[0] != '\0') {
         snprintf(context_str, sizeof(context_str), "Game context: %s\n", context);
-    }
-    #endif
+    */
 
-    /* Build generation prompt */
+    /* Detect language if user provided input */
+    const char *language = "English";
+    if (user_input && user_input[0] != '\0') {
+        language = llm_detect_language(llm, user_input);
+    } else if (state->detected_language[0]) {
+        language = state->detected_language;
+    }
+
+    /* Build prompt with explicit language */
     snprintf(prompt, sizeof(prompt), RESPONSE_GENERATION_PROMPT,
-             user_input, game_response, context_str);
+             language, game_response);
+
+    if (llm->config.verbose) {
+        printf("Generating response in %s\n", language);
+    }
 
     /* Use rotating sequence IDs */
-    current_seq = state->seq_counter++ % 8;
+    current_seq = (state->seq_counter++) % 8;
 
     if (llm->config.verbose) {
         printf("\n=== LLM Response Generation ===\n");
@@ -261,16 +273,16 @@ static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response
         printf("Using sequence ID: %d\n", current_seq);
     }
 
-    /* Clear KV cache for this sequence */
+    /* Clear KV cache completely for this sequence to prevent language contamination */
     llama_memory_t mem = llama_get_memory(state->ctx);
     llama_memory_seq_rm(mem, current_seq, -1, -1);
 
-    /* Tokenize prompt */
+    /* Tokenize prompt (add_special=false to avoid double BOS) */
     n_tokens = llama_n_ctx(state->ctx);
     tokens = (llama_token *)malloc(n_tokens * sizeof(llama_token));
     n_prompt_tokens = llama_tokenize(llama_model_get_vocab(state->model),
                                      prompt, (int)strlen(prompt),
-                                     tokens, n_tokens, true, true);
+                                     tokens, n_tokens, false, true);
     if (n_prompt_tokens < 0) {
         free(tokens);
         return 0;
@@ -340,25 +352,48 @@ static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response
     llama_batch_free(batch_gen);
     output[response_len] = '\0';
 
-    /* Trim whitespace */
-    char *trimmed = output;
-    while (*trimmed == ' ' || *trimmed == '\n' || *trimmed == '\r' || *trimmed == '\t') {
-        trimmed++;
+    /* Extract only the translation line (first line or after "Translate:") */
+    char *translate_marker = strstr(output, "Translate:");
+    char *start = translate_marker ? translate_marker + 10 : output;
+    
+    /* Skip whitespace */
+    while (*start == ' ' || *start == '\n' || *start == '\r' || *start == '\t') {
+        start++;
     }
-    char *end = trimmed + strlen(trimmed) - 1;
-    while (end > trimmed && (*end == ' ' || *end == '\n' || *end == '\r' || *end == '\t')) {
-        *end-- = '\0';
+    
+    /* Find end of first line */
+    char *end = start;
+    while (*end && *end != '\n' && *end != '\r') {
+        end++;
     }
+    *end = '\0';
+    
+    /* Remove trailing whitespace and punctuation artifacts */
+    end--;
+    while (end > start && (*end == ' ' || *end == '\t' || *end == '?' || *end == '!')) {
+        if (*end == '?' || *end == '!') {
+            /* Keep if it's the only punctuation at the end */
+            char *check = end - 1;
+            if (check > start && (*check == '?' || *check == '!')) {
+                *end = '\0';
+                end--;
+            } else {
+                break;
+            }
+        } else {
+            *end = '\0';
+            end--;
+        }
+    }
+    
+    /* Move to output buffer */
+    if (start != output) {
+        memmove(output, start, strlen(start) + 1);
+    }
+    response_len = strlen(output);
 
-    /* Move trimmed result to start of output buffer */
-    if (trimmed != output) {
-        memmove(output, trimmed, strlen(trimmed) + 1);
-        response_len = strlen(output);
-    }
-
-    if (llm->config.verbose) {
-        printf("Generated response: \"%s\"\n", output);
-        printf("===============================\n\n");
+    if (llm->config.verbose && response_len > 0) {
+        printf("Generated: \"%s\"\n", output);
     }
 
     return response_len;

@@ -194,7 +194,7 @@ int nagi_llm_init(nagi_llm_t *llm,
     llama_sampler_chain_add(state->sampler, llama_sampler_init_dist(seed));
 
     /* Create sampler for response generation (creative with randomized temperature) */
-    float creative_temp = 0.7f + ((float)(seed % 30) / 100.0f);  /* 0.7 to 0.99 */
+    float creative_temp = 0.2f + ((float)(seed % 30) / 100.0f);  /* 0.2 to 0.5 */
     state->sampler_creative = llama_sampler_chain_init(llama_sampler_chain_default_params());
     llama_sampler_chain_add(state->sampler_creative, llama_sampler_init_top_k(40));
     llama_sampler_chain_add(state->sampler_creative, llama_sampler_init_top_p(0.9f, 1));
@@ -213,6 +213,7 @@ int nagi_llm_init(nagi_llm_t *llm,
         printf("  Context size: %d\n", llm->config.context_size);
         printf("  Batch size: %d\n", llm->config.batch_size);
         printf("  Threads: %d\n", llm->config.n_threads);
+        printf("  Sequences: %d (seq 0 reserved for system prompt)\n", llm->config.n_seq_max);
     }
 
     return 1;

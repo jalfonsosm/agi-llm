@@ -102,8 +102,9 @@ int main(int argc, char *argv[])
 		state.var[V09_BADWORD] = 0;
 
 		#ifdef NAGI_ENABLE_LLM
-		/* Clear LLM input at the start of each cycle */
-		llm_context_clear_last_player_input();
+		/* NOTE: No longer clearing last player input - we need it in the conversation history
+		 * for proper language detection, especially when the user switches languages */
+		// llm_context_clear_last_player_input();
 		#endif
 		
 		// TODO: need joy polling setup.

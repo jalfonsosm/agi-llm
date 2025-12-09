@@ -7,7 +7,8 @@ if(NAGI_LLM_ENABLE_LLAMACPP)
     set(LLAMA_PREFIX ${CMAKE_BINARY_DIR}/_deps/llama)
 
     # Performance optimization flags
-    set(LLAMA_PERF_FLAGS "-O3 -march=native -ffast-math -funroll-loops")
+    # Note: Using -fno-finite-math-only instead of -ffast-math because llama.cpp requires non-finite math
+    set(LLAMA_PERF_FLAGS "-O3 -march=native -fno-finite-math-only -funroll-loops")
     
     set(LLAMA_CMAKE_FLAGS
         -DLLAMA_BUILD_SHARED=OFF
@@ -46,13 +47,12 @@ if(NAGI_LLM_ENABLE_LLAMACPP)
     endif()
         
     if(NOT DEFINED MODEL_NAME)
-        set(MODEL_NAME "GEMMA3" CACHE STRING "Select the LLM model: PHI3, GEMMA3)")
-        # set(MODEL_NAME "PHI3" CACHE STRING "Select the LLM model: PHI3, GEMMA3)")
+        # Options: LLAMA3 (3B), LLAMA3_8B (8B), GEMMA3 (4B), PHI3 (4B), QWEN2 (7B)
+        set(MODEL_NAME "LLAMA3" CACHE STRING "Select LLM model")
     endif()
 
     if(MODEL_NAME STREQUAL "PHI3")
         set(MODEL_URL "https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF/resolve/main/Phi-3-mini-4k-instruct-Q4_K_M.gguf")
-        # set(MODEL_URL "https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF/blob/main/Phi-3-mini-4k-instruct-Q3_K_L.gguf")
         message(STATUS "Configuring for Phi-3 prompts.")
         target_compile_definitions(nagi-llm PRIVATE
             START_OF_SYSTEM="<|system|>\\n"
@@ -71,10 +71,40 @@ if(NAGI_LLM_ENABLE_LLAMACPP)
             START_OF_USER="<start_of_turn>user\\n"
             END_OF_USER="<end_of_turn>\\n"
             START_OF_ASSISTANT="<start_of_turn>model\\n"
-            END_OF_ASSISTANT="<end_of_turn>\\n"
-        )
+            END_OF_ASSISTANT="<end_of_turn>\\n")
+    elseif(MODEL_NAME STREQUAL "LLAMA3")
+        set(MODEL_URL "https://huggingface.co/hugging-quants/Llama-3.2-3B-Instruct-Q4_K_M-GGUF/resolve/main/llama-3.2-3b-instruct-q4_k_m.gguf")
+        message(STATUS "Configuring for Llama 3.2 3B (2.3GB)")
+        target_compile_definitions(nagi-llm PRIVATE
+            START_OF_SYSTEM="<|begin_of_text|><|start_header_id|>system<|end_header_id|>\\n"
+            END_OF_SYSTEM="<|eot_id|>"
+            START_OF_USER="<|start_header_id|>user<|end_header_id|>\\n"
+            END_OF_USER="<|eot_id|>"            
+            START_OF_ASSISTANT="<|start_header_id|>assistant<|end_header_id|>\\n"
+            END_OF_ASSISTANT="<|eot_id|>")
+    elseif(MODEL_NAME STREQUAL "LLAMA3_8B")
+        set(MODEL_URL "https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf")
+        message(STATUS "Configuring for Llama 3.1 8B (4.9GB) - BETTER multilingual")
+        target_compile_definitions(nagi-llm PRIVATE
+            START_OF_SYSTEM="<|begin_of_text|><|start_header_id|>system<|end_header_id|>\\n"
+            END_OF_SYSTEM="<|eot_id|>"
+            START_OF_USER="<|start_header_id|>user<|end_header_id|>\\n"
+            END_OF_USER="<|eot_id|>"            
+            START_OF_ASSISTANT="<|start_header_id|>assistant<|end_header_id|>\\n"
+            END_OF_ASSISTANT="<|eot_id|>")
+    elseif(MODEL_NAME STREQUAL "QWEN2")
+        set(MODEL_URL "https://huggingface.co/WSDW/Qwen2.5-7B-Instruct-Q4_K_M-GGUF/resolve/main/qwen2.5-7b-instruct-q4_k_m.gguf")
+        # set(MODEL_URL "https://huggingface.co/ldostadi/Qwen3-8B-abliterated-Q4_K_M-GGUF/resolve/main/qwen3-8b-abliterated-q4_k_m.gguf")
+        message(STATUS "Configuring for Qwen2.5 7B (4.8GB) - EXCELLENT multilingual")
+        target_compile_definitions(nagi-llm PRIVATE
+            START_OF_SYSTEM="<|im_start|>system\\n"
+            END_OF_SYSTEM="<|im_end|>\\n"
+            START_OF_USER="<|im_start|>user\\n"
+            END_OF_USER="<|im_end|>\\n"
+            START_OF_ASSISTANT="<|im_start|>assistant\\n"
+            END_OF_ASSISTANT="<|im_end|>\\n")
     else()
-        message(FATAL_ERROR "Unknown MODEL_NAME: ${MODEL_NAME}. Use PHI3 or GEMMA3.")
+        message(FATAL_ERROR "Unknown MODEL_NAME: ${MODEL_NAME}. Options: LLAMA3, LLAMA3_8B, QWEN2, GEMMA3, PHI3")
     endif()
 
     ExternalProject_Add(llama_cpp

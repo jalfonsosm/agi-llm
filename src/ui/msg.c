@@ -196,10 +196,19 @@ void message_box_draw(const char *str, u16 row, u16 w, u16 toggle)
 
 	if (nagi_llm_ready(g_llm) && str && strlen(str) > 0) {
 		const char *user_input = llm_context_get_last_player_input();
+		printf("[DEBUG msg.c] Last player input: '%s'\n", user_input ? user_input : "(null)");
+		printf("[DEBUG msg.c] Game response to translate: '%s'\n", str);
 		int len = nagi_llm_generate_response(g_llm, str, user_input ? user_input : "",
 		                                      translated_msg, sizeof(translated_msg));
 		if (len > 0) {
+			/* Store the translated message in context for language continuity */
+			llm_context_on_print(translated_msg);
 			str = translated_msg;
+
+			/* Clear the player input after using it, so automatic events get empty user_input */
+			if (user_input && user_input[0] != '\0') {
+				llm_context_clear_last_player_input();
+			}
 		}
 	}
 #endif

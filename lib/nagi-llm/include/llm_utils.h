@@ -62,67 +62,25 @@ static const char *EXTRACTION_PROMPT_SIMPLE =
     "%s" END_OF_USER
     START_OF_ASSISTANT;
 
-/* Prompt for response generation - translates game response to user's language */
-/* Prompt for response generation - translates game texts to the player's language */
+/* Language detection prompt */
+static const char *LANGUAGE_DETECTION_PROMPT =
+    START_OF_USER
+    "look tree" END_OF_USER START_OF_ASSISTANT "English" END_OF_ASSISTANT
+    START_OF_USER
+    "mira arbol" END_OF_USER START_OF_ASSISTANT "Spanish" END_OF_ASSISTANT
+    START_OF_USER
+    "regarde arbre" END_OF_USER START_OF_ASSISTANT "French" END_OF_ASSISTANT
+    START_OF_USER
+    "%s" END_OF_USER START_OF_ASSISTANT;
+
+/* Response generation with explicit language */
 static const char *RESPONSE_GENERATION_PROMPT =
     START_OF_SYSTEM
-    "You are a witty narrator for a text adventure game. Translate game texts to the player's language with creativity, humor, sarcasm and even irreverence. \n\n"
-    "### CRITICAL LANGUAGE RULES ###\n"
-    "1. IF 'Player input' is NOT EMPTY: ALWAYS use the language of the 'Player input'.\n"
-    "2. IF 'Player input' IS EMPTY (Automatic Event/System Command): You MUST use the language of the LAST 'Respond:' in the conversation history to maintain continuity.\n"
-    "3. Take care with translation cache in cases where the player switches languages for similar sentences.\n\n"
+    "You are a witty narrator for a text adventure game. Translate game texts to %s with creativity, humor, sarcasm and even irreverence.\n"
+    "Output ONLY the translation, nothing else."
     END_OF_SYSTEM
-    
     START_OF_USER
-    "Player input: look at castle\n"
-    "Game response: You see a tall castle\n"
-    "Respond:" 
-    END_OF_USER
-    START_OF_ASSISTANT
-    "You see a ridiculously tall castle. Compensating for something?" 
-    END_OF_ASSISTANT
-    
-    START_OF_USER
-    "Player input: mira el castillo\n"
-    "Game response: You see a tall castle\n"
-    "Respond:" 
-    END_OF_USER
-    START_OF_ASSISTANT
-    "Ves un castillo ridículamente alto. ¿Compensando algo?" 
-    END_OF_ASSISTANT
-    
-    START_OF_USER
-    "Player input: \n"
-    "Game response: A strong gust of wind blows past you.\n"
-    "Respond:" 
-    END_OF_USER
-    START_OF_ASSISTANT
-    "Una fuerte ráfaga de viento pasa a tu lado. ¿En serio creíste que podrías caminar sin despeinarte?" 
-    END_OF_ASSISTANT
-    
-    START_OF_USER
-    "Player input: open door\n"
-    "Game response: The door is locked\n"
-    "Respond:" 
-    END_OF_USER
-    START_OF_ASSISTANT
-    "The door is locked. Shocking, right?" 
-    END_OF_ASSISTANT
-    
-    START_OF_USER
-    "Player input: regarde le château\n"
-    "Game response: You see a tall castle\n"
-    "Respond:" 
-    END_OF_USER
-    START_OF_ASSISTANT
-    "Tu vois un château ridiculement haut. Il compense quelque chose?" 
-    END_OF_ASSISTANT
-    
-    START_OF_USER
-    "Player input: %s\n"
-    "Game response: %s\n"
-    "--- CRITICAL: REMEMBER: Respond in the Player Input language, but if Player input is empty, use the language of the LAST 'Respond:' in the history. Don't start repeating the player input or game response. ---"
-    "Respond:" 
+    "%s"
     END_OF_USER
     START_OF_ASSISTANT;
 
@@ -180,6 +138,12 @@ static const char *SEMANTIC_MATCHING_PROMPT =
 
 /* Forward declaration */
 typedef struct nagi_llm nagi_llm_t;
+
+/*
+ * Detect language from user input
+ * Returns language name ("English", "Spanish", "French", etc.)
+ */
+const char *llm_detect_language(nagi_llm_t *llm, const char *input);
 
 /*
  * Get word string from word ID

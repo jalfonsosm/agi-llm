@@ -215,7 +215,6 @@ static int bitnet_generate_response(nagi_llm_t *llm, const char *game_response,
 {
     llm_state_t *state = llm->state;
     char prompt[NAGI_LLM_MAX_PROMPT_SIZE];
-    char context_str[512];
     int n_tokens, n_prompt_tokens;
     int current_seq;
     int response_len, gen_count, max_response_tokens;
@@ -225,27 +224,23 @@ static int bitnet_generate_response(nagi_llm_t *llm, const char *game_response,
     if (!nagi_llm_ready(llm)) return 0;
     if (!game_response || !user_input || !output || output_size <= 0) return 0;
 
-    /* Get context if available */
-    context_str[0] = '\0';
-    #ifdef NAGI_ENABLE_LLM
-    const char *context = llm_context_build();
-    if (context && context[0] != '\0') {
-        snprintf(context_str, sizeof(context_str), "Game context: %s\n", context);
+    /* Detect language if user provided input */
+    const char *language = "English";
+    if (user_input && user_input[0] != '\0') {
+        language = llm_detect_language(llm, user_input);
+    } else if (state->detected_language[0]) {
+        language = state->detected_language;
     }
-    #endif
 
-    /* Build generation prompt */
+    /* Build prompt with explicit language */
     snprintf(prompt, sizeof(prompt), RESPONSE_GENERATION_PROMPT,
-             user_input, game_response, context_str);
+             language, game_response);
 
     /* Use rotating sequence IDs */
     current_seq = state->seq_counter++ % 8;
 
     if (llm->config.verbose) {
-        printf("\n=== BitNet Response Generation ===\n");
-        printf("User input: \"%s\"\n", user_input);
-        printf("Game response: \"%s\"\n", game_response);
-        printf("Using sequence ID: %d\n", current_seq);
+        printf("BitNet: Generating response in %s\n", language);
     }
 
     /* Clear KV cache for this sequence */
@@ -342,9 +337,8 @@ static int bitnet_generate_response(nagi_llm_t *llm, const char *game_response,
         response_len = strlen(output);
     }
 
-    if (llm->config.verbose) {
-        printf("Generated response: \"%s\"\n", output);
-        printf("===============================\n\n");
+    if (llm->config.verbose && response_len > 0) {
+        printf("Generated: \"%s\"\n", output);
     }
 
     return response_len;

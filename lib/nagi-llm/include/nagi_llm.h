@@ -91,8 +91,11 @@ typedef struct llm_state {
     int initialized;
     char last_error[256];
 
-    /* Sequence counter for rotating through sequences */
+    /* Sequence counter for rotating through sequences (1-7, seq 0 is reserved for system prompt) */
     int seq_counter;
+
+    /* Detected language cache */
+    char detected_language[32];
 
     /* Game dictionary (words.tok data) - passed from game engine */
     const u8 *dictionary_data;
