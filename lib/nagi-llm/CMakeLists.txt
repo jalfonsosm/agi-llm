@@ -99,7 +99,7 @@ if(NAGI_LLM_ENABLE_BITNET)
 endif()
 
 # Cloud API backend
-if(NAGI_LLM_ENABLE_CLOUD)
+if(NAGI_LLM_ENABLE_CLOUD_API)
     find_package(CURL REQUIRED)
     target_sources(nagi-llm PRIVATE
         backends/cloud/nagi_llm_cloud.c
@@ -109,7 +109,7 @@ if(NAGI_LLM_ENABLE_CLOUD)
         ${CMAKE_CURRENT_SOURCE_DIR}/backends/cloud
     )
     target_link_libraries(nagi-llm PUBLIC CURL::libcurl)
-    target_compile_definitions(nagi-llm PUBLIC NAGI_LLM_HAS_CLOUD=1)
+    target_compile_definitions(nagi-llm PUBLIC NAGI_LLM_HAS_CLOUD_API=1)
     message(STATUS "NAGI-LLM: Cloud backend enabled")
 endif()
 

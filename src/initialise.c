@@ -199,27 +199,37 @@ void nagi_init()
 	// allocate memory for the LZW dictionary
 	lzw_init();
 
-	#ifdef NAGI_ENABLE_LLM
+#ifdef NAGI_ENABLE_LLM
 	/* Initialize LLM if available. Prefer compile-time default model path,
 	   otherwise fall back to environment variable `NAGI_LLM_MODEL_PATH`. */
 	const char *llm_model_path = NULL;
 	
-#if defined(NAGI_DEFAULT_LLM_MODEL_PATH)
+	nagi_llm_backend_t backend = NAGI_LLM_BACKEND_UNDEFINED;
+
+#ifdef NAGI_LLM_HAS_CLOUD_API
+	backend = NAGI_LLM_BACKEND_CLOUD;
+#else
+
+#ifdef NAGI_DEFAULT_LLM_MODEL_PATH
 	llm_model_path = NAGI_DEFAULT_LLM_MODEL_PATH;
 #else
 	llm_model_path = getenv("NAGI_LLM_MODEL_PATH");
 #endif
+
 	if (llm_model_path && llm_model_path[0]) {
 #ifdef NAGI_LLM_HAS_LLAMACPP
-		nagi_llm_backend_t backend = NAGI_LLM_BACKEND_LLAMACPP;
+		backend = NAGI_LLM_BACKEND_LLAMACPP;
 #elif defined(NAGI_LLM_HAS_BITNET)
-		nagi_llm_backend_t backend = NAGI_LLM_BACKEND_BITNET;
-#elif defined(NAGI_LLM_HAS_CLOUD_API)
-		nagi_llm_backend_t backend = NAGI_LLM_BACKEND_CLOUD_API;
+		backend = NAGI_LLM_BACKEND_BITNET;
 #else
-		nagi_llm_backend_t backend = NAGI_LLM_BACKEND_NONE;
+		fprintf(stderr, "No LLM backend available\n");
+		g_llm = NULL;
+		return;
+#endif
+	}
 #endif
 
+	if (backend != NAGI_LLM_BACKEND_UNDEFINED) {
 		g_llm = nagi_llm_create(backend);
 		
 		if (!g_llm) {

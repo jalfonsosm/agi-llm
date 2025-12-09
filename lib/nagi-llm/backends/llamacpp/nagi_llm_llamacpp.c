@@ -12,15 +12,24 @@
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdbool.h>
+#include <stdint.h>
+#include <time.h>
 
 #include "nagi_llm_llamacpp.h"
 #include "../../include/nagi_llm_context.h"
-#include "llm_utils.h"
+#include "../../include/llm_utils.h"
+#include "../llama_common.h"
 
 #include "llama.h"
 
 #include <stdint.h>
 #include <stddef.h>
+
+/* Forward declarations */
+static int llamacpp_init(nagi_llm_t *llm, const char *model_path, const nagi_llm_config_t *config);
+static void llamacpp_shutdown(nagi_llm_t *llm);
+static const char *llamacpp_extract_words(nagi_llm_t *llm, const char *input);
+static const char *llamacpp_detect_language(nagi_llm_t *llm, const char *input);
 
 /*
  * Helper: Check whether an input matches an expected AGI word list
@@ -220,6 +229,15 @@ static int llamacpp_matches_expected(nagi_llm_t *llm, const char *input,
 }
 
 /*
+ * Detect language from user input (wrapper for shared implementation)
+ */
+static const char *llamacpp_detect_language(nagi_llm_t *llm, const char *input)
+{
+    llm_state_t *state = llm->state;
+    return llama_common_detect_language(llm, input, state->model, state->ctx, state->sampler);
+}
+
+/*
  * Generate a game response using the LLM
  * Translates game response to player's language and optionally adds context
  */
@@ -250,7 +268,7 @@ static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response
     /* Detect language if user provided input */
     const char *language = "English";
     if (user_input && user_input[0] != '\0') {
-        language = llm_detect_language(llm, user_input);
+        language = llamacpp_detect_language(llm, user_input);
     } else if (state->detected_language[0]) {
         language = state->detected_language;
     }
@@ -399,6 +417,324 @@ static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response
     return response_len;
 }
 
+/* Common error setter */
+static void set_error(llm_state_t *state, const char *fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    if (state) {
+        vsnprintf(state->last_error, sizeof(state->last_error), fmt, args);
+    } else {
+        char buf[256];
+        vsnprintf(buf, sizeof(buf), fmt, args);
+        fprintf(stderr, "LLM Error: %s\n", buf);
+    }
+    va_end(args);
+}
+
+/*
+ * Initialize the llama.cpp backend
+ */
+static int llamacpp_init(nagi_llm_t *llm, const char *model_path, const nagi_llm_config_t *config)
+{
+    if (!llm) {
+        return 0;
+    }
+
+    struct llama_model_params model_params;
+    struct llama_context_params ctx_params;
+    
+    if (llm->state && llm->state->initialized) {
+        fprintf(stderr, "LLM: Already initialized\n");
+        return 1;
+    }
+
+    if (!llm->state) {
+        llm->state = (llm_state_t *)calloc(1, sizeof(llm_state_t));
+        if (!llm->state) {
+            set_error(NULL, "Failed to allocate state");
+            return 0;
+        }
+    }
+    
+    llm_state_t *state = llm->state;
+
+    if (config) {
+        memcpy(&llm->config, config, sizeof(nagi_llm_config_t));
+    }
+
+    if (model_path && model_path[0] != '\0') {
+        strncpy(llm->config.model_path, model_path, NAGI_LLM_MAX_MODEL_PATH - 1);
+        llm->config.model_path[NAGI_LLM_MAX_MODEL_PATH - 1] = '\0';
+    }
+
+    /* Initialize llama.cpp backend */
+    llama_backend_init();
+
+    /* Load model */
+    model_params = llama_model_default_params();
+    
+    if (llm->config.use_gpu) {
+        model_params.n_gpu_layers = 999;
+        model_params.main_gpu = 0;
+    } else {
+        model_params.n_gpu_layers = 0;
+    }
+    
+    model_params.use_mmap = true;
+    model_params.use_mlock = false;
+
+    printf("LLM Parser: Loading model from %s...\n", llm->config.model_path);
+    state->model = llama_load_model_from_file(llm->config.model_path, model_params);
+    if (!state->model) {
+        set_error(state, "Failed to load model: %s", llm->config.model_path);
+        fprintf(stderr, "LLM Parser: %s\n", state->last_error);
+        free(state);
+        state = NULL;
+        llm->state = NULL;
+        return 0;
+    }
+
+    /* Create context */
+    ctx_params = llama_context_default_params();
+    ctx_params.n_ctx = llm->config.context_size;
+    ctx_params.n_batch = llm->config.batch_size;
+    ctx_params.n_ubatch = llm->config.u_batch_size;
+    ctx_params.n_threads = llm->config.n_threads;
+    ctx_params.n_threads_batch = llm->config.n_threads;
+    ctx_params.n_seq_max = llm->config.n_seq_max;
+
+    state->ctx = llama_new_context_with_model(state->model, ctx_params);
+    if (!state->ctx) {
+        set_error(state, "Failed to create context");
+        fprintf(stderr, "LLM Parser: %s\n", state->last_error);
+        llama_free_model(state->model);
+        free(state);
+        llm->state = NULL;
+        return 0;
+    }
+
+    /* Random seed for variety */
+    uint32_t seed = (uint32_t)time(NULL) ^ (uint32_t)((uintptr_t)state);
+    
+    /* Create sampler for extraction/semantic (deterministic) */
+    state->sampler = llama_sampler_chain_init(llama_sampler_chain_default_params());
+    llama_sampler_chain_add(state->sampler, llama_sampler_init_top_k(llm->config.top_k));
+    llama_sampler_chain_add(state->sampler, llama_sampler_init_top_p(llm->config.top_p, 1));
+    llama_sampler_chain_add(state->sampler, llama_sampler_init_temp(llm->config.temperature));
+    llama_sampler_chain_add(state->sampler, llama_sampler_init_dist(seed));
+
+    /* Create sampler for response generation (creative with randomized temperature) */
+    float creative_temp = 0.2f + ((float)(seed % 30) / 100.0f);  /* 0.2 to 0.5 */
+    state->sampler_creative = llama_sampler_chain_init(llama_sampler_chain_default_params());
+    llama_sampler_chain_add(state->sampler_creative, llama_sampler_init_top_k(40));
+    llama_sampler_chain_add(state->sampler_creative, llama_sampler_init_top_p(0.9f, 1));
+    llama_sampler_chain_add(state->sampler_creative, llama_sampler_init_temp(creative_temp));
+    llama_sampler_chain_add(state->sampler_creative, llama_sampler_init_dist(seed + 1));
+    
+    if (llm->config.verbose) {
+        printf("LLM Sampler: seed=%u, creative_temp=%.2f\n", seed, creative_temp);
+    }
+
+    state->initialized = 1;
+    state->seq_counter = 0;
+
+    if (llm->config.verbose) {
+        printf("LLM Parser: Initialized successfully\n");
+        printf("  Context size: %d\n", llm->config.context_size);
+        printf("  Batch size: %d\n", llm->config.batch_size);
+        printf("  Threads: %d\n", llm->config.n_threads);
+        printf("  Sequences: %d (seq 0 reserved for system prompt)\n", llm->config.n_seq_max);
+    }
+
+    return 1;
+}
+
+/*
+ * Shutdown the llama.cpp backend
+ */
+static void llamacpp_shutdown(nagi_llm_t *llm)
+{
+    llm_state_t *state = llm->state;
+
+    if (!state) return;
+
+    if (llm->config.verbose) {
+        fprintf(stderr, "LLM: Shutting down\n");
+    }
+
+    if (state->sampler) {
+        llama_sampler_free(state->sampler);
+    }
+    if (state->sampler_creative) {
+        llama_sampler_free(state->sampler_creative);
+    }
+    if (state->ctx) {
+        llama_free(state->ctx);
+    }
+    if (state->model) {
+        llama_free_model(state->model);
+    }
+
+    llama_backend_free();
+
+    free(state);
+    llm->state = NULL;
+
+    if (llm->config.verbose) {
+        printf("LLM Parser: Shutdown complete\n");
+    }
+}
+
+/*
+ * Extract verb and noun from user input (EXTRACTION mode)
+ */
+static const char *llamacpp_extract_words(nagi_llm_t *llm, const char *input)
+{
+    static char response_buf[NAGI_LLM_MAX_RESPONSE_SIZE];
+    char prompt[NAGI_LLM_MAX_PROMPT_SIZE];
+    char piece[64];
+    int n_tokens, n_prompt_tokens;
+    int current_seq;
+    int response_len, gen_count, max_extract_tokens;
+    llama_token *tokens;
+
+    if (!nagi_llm_ready(llm)) return input;
+    if (!input || input[0] == '\0') return input;
+
+    /* Extract game verbs for vocabulary hint */
+    const char *verbs = extract_game_verbs(llm);
+
+    /* Build extraction prompt with vocabulary context */
+    if (verbs && verbs[0] != '\0' && llm->extraction_prompt_template) {
+        snprintf(prompt, sizeof(prompt), llm->extraction_prompt_template,
+                 verbs, verbs, verbs, input);
+    } else if (llm->extraction_prompt_simple) {
+        snprintf(prompt, sizeof(prompt), llm->extraction_prompt_simple, input);
+    } else {
+        return input;
+    }
+
+    llm_state_t *state = llm->state;
+    current_seq = (state->seq_counter++) % 8;
+
+    if (llm->config.verbose) {
+        printf("\n=== LLM Extraction ===\n");
+        printf("Input: \"%s\"\n", input);
+        printf("Using sequence ID: %d\n", current_seq);
+    }
+
+    /* Clear KV cache for this sequence */
+    llama_memory_t mem = llama_get_memory(state->ctx);
+    llama_memory_seq_rm(mem, current_seq, -1, -1);
+
+    /* Tokenize prompt */
+    n_tokens = llama_n_ctx(state->ctx);
+    tokens = (llama_token *)malloc(n_tokens * sizeof(llama_token));
+    n_prompt_tokens = llama_tokenize(llama_model_get_vocab(state->model),
+                                     prompt, (int)strlen(prompt),
+                                     tokens, n_tokens, true, true);
+    if (n_prompt_tokens < 0) {
+        free(tokens);
+        return input;
+    }
+
+    /* Process prompt in batches */
+    struct llama_batch batch = llama_batch_init(llm->config.batch_size, 0, 8);
+    for (int i = 0; i < n_prompt_tokens; i += llm->config.batch_size) {
+        int n_eval = n_prompt_tokens - i;
+        if (n_eval > llm->config.batch_size) n_eval = llm->config.batch_size;
+
+        batch.n_tokens = n_eval;
+        for (int k = 0; k < n_eval; k++) {
+            batch.token[k] = tokens[i + k];
+            batch.pos[k] = i + k;
+            batch.n_seq_id[k] = 1;
+            batch.seq_id[k][0] = current_seq;
+            batch.logits[k] = false;
+        }
+        if (i + n_eval == n_prompt_tokens) {
+            batch.logits[n_eval - 1] = true;
+        }
+
+        if (llama_decode(state->ctx, batch) != 0) {
+            llama_batch_free(batch);
+            free(tokens);
+            return input;
+        }
+    }
+    llama_batch_free(batch);
+    free(tokens);
+
+    /* Generate response (extract English words) */
+    response_len = 0;
+    gen_count = 0;
+    max_extract_tokens = 10;
+    struct llama_batch batch_gen = llama_batch_init(1, 0, 8);
+
+    while (response_len < (int)sizeof(response_buf) - 1 && gen_count < max_extract_tokens) {
+        llama_token new_token = llama_sampler_sample(state->sampler, state->ctx, -1);
+        llama_sampler_accept(state->sampler, new_token);
+
+        if (llama_vocab_is_eog(llama_model_get_vocab(state->model), new_token)) {
+            break;
+        }
+
+        int piece_len = llama_token_to_piece(llama_model_get_vocab(state->model),
+                                             new_token, piece, sizeof(piece), 0, true);
+        if (piece_len > 0 && response_len + piece_len < (int)sizeof(response_buf) - 1) {
+            memcpy(response_buf + response_len, piece, piece_len);
+            response_len += piece_len;
+
+            if (strchr(piece, '\n') != NULL) {
+                break;
+            }
+        }
+
+        batch_gen.n_tokens = 1;
+        batch_gen.token[0] = new_token;
+        batch_gen.pos[0] = n_prompt_tokens + gen_count;
+        batch_gen.n_seq_id[0] = 1;
+        batch_gen.seq_id[0][0] = current_seq;
+        batch_gen.logits[0] = true;
+
+        if (llama_decode(state->ctx, batch_gen) != 0) {
+            break;
+        }
+        gen_count++;
+    }
+
+    llama_batch_free(batch_gen);
+    response_buf[response_len] = '\0';
+
+    /* Normalize: trim whitespace and lowercase */
+    char *trimmed = response_buf;
+    while (*trimmed == ' ' || *trimmed == '\n' || *trimmed == '\r' || *trimmed == '\t') {
+        trimmed++;
+    }
+    char *end = trimmed + strlen(trimmed) - 1;
+    while (end > trimmed && (*end == ' ' || *end == '\n' || *end == '\r' || *end == '\t')) {
+        *end-- = '\0';
+    }
+
+    /* Convert to lowercase */
+    for (int i = 0; trimmed[i]; i++) {
+        trimmed[i] = tolower((unsigned char)trimmed[i]);
+    }
+
+    if (llm->config.verbose) {
+        printf("Extracted: \"%s\"\n", trimmed);
+        printf("===================\n\n");
+    }
+
+    /* Copy trimmed result back to start of buffer */
+    if (trimmed != response_buf) {
+        memmove(response_buf, trimmed, strlen(trimmed) + 1);
+    }
+
+    return response_buf;
+}
+
 /*
  * Create a llama.cpp backend instance
  */
@@ -426,6 +762,11 @@ nagi_llm_t *nagi_llm_llamacpp_create(void)
     llm->config.mode = NAGI_LLM_MODE_EXTRACTION;
     llm->config.n_seq_max = 8;
     llm->config.flash_attn = true;
+    
+    /* Assign function pointers */
+    llm->init = llamacpp_init;
+    llm->shutdown = llamacpp_shutdown;
+    llm->extract_words = llamacpp_extract_words;
     llm->matches_expected = llamacpp_matches_expected;
     llm->generate_response = llamacpp_generate_response;
     llm->state = NULL; 

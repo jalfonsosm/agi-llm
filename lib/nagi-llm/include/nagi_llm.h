@@ -47,6 +47,7 @@ typedef enum {
  * LLM backend types
  */
 typedef enum {
+    NAGI_LLM_BACKEND_UNDEFINED = -1,
     NAGI_LLM_BACKEND_LLAMACPP = 0,  /* llama.cpp - embedded local LLM */
     NAGI_LLM_BACKEND_BITNET = 1,    /* BitNet - optimized quantized models */
     NAGI_LLM_BACKEND_CLOUD = 2      /* Cloud API (OpenAI-compatible) */
@@ -124,6 +125,23 @@ struct nagi_llm {
     const char *extraction_prompt_template;
     const char *extraction_prompt_simple;
 
+    /* Backend function pointers */
+    
+    /*
+     * Initialize the backend
+     */
+    int (*init)(nagi_llm_t *llm, const char *model_path, const nagi_llm_config_t *config);
+    
+    /*
+     * Shutdown the backend
+     */
+    void (*shutdown)(nagi_llm_t *llm);
+    
+    /*
+     * Extract verb and noun from user input
+     */
+    const char *(*extract_words)(nagi_llm_t *llm, const char *input);
+
     /*
      * Check if input matches expected command (Semantic Match)
      *
@@ -172,17 +190,35 @@ int nagi_llm_init(nagi_llm_t *llm,
                 const char *model_path,
                 const nagi_llm_config_t *config);
 
+/*
+ * Shutdown the LLM backend
+ */
 void nagi_llm_shutdown(nagi_llm_t *llm);
 
+/*
+ * Check if LLM is ready
+ */
 int nagi_llm_ready(nagi_llm_t *llm);
 
+/*
+ * Set dictionary data
+ */
 int nagi_llm_set_dictionary(nagi_llm_t *llm, const unsigned char *dictionary, size_t size);
 
+/*
+ * Extract verb and noun from user input
+ */
 const char *nagi_llm_extract_words(nagi_llm_t *llm, const char *input);
 
+/*
+ * Check if input matches expected command
+ */
 int nagi_llm_matches_expected(nagi_llm_t *llm, const char *input,
                                     const int *expected_word_ids, int expected_count);
 
+/*
+ * Generate a game response
+ */
 int nagi_llm_generate_response(nagi_llm_t *llm, const char *game_response,
                                       const char *user_input, char *output, int output_size);
 

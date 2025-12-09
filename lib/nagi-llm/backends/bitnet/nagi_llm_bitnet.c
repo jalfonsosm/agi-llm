@@ -11,8 +11,9 @@
 #include <stdio.h>
 #include "nagi_llm_bitnet.h"
 #include "../../include/nagi_llm_context.h"
+#include "../../include/llm_utils.h"
+#include "../llama_common.h"
 #include "llama.h"
-#include "llm_utils.h"
 
 /*
  * Semantic matching - uses LLM to determine if input matches expected command
@@ -227,7 +228,7 @@ static int bitnet_generate_response(nagi_llm_t *llm, const char *game_response,
     /* Detect language if user provided input */
     const char *language = "English";
     if (user_input && user_input[0] != '\0') {
-        language = llm_detect_language(llm, user_input);
+        language = llama_common_detect_language(llm, user_input, state->model, state->ctx, state->sampler);
     } else if (state->detected_language[0]) {
         language = state->detected_language;
     }
@@ -362,6 +363,9 @@ nagi_llm_t *nagi_llm_bitnet_create(void)
     llm->extraction_prompt_template = EXTRACTION_PROMPT_TEMPLATE;
     llm->extraction_prompt_simple = EXTRACTION_PROMPT_SIMPLE;
     
+    llm->init = NULL;  /* BitNet uses same init as llamacpp */
+    llm->shutdown = NULL;  /* BitNet uses same shutdown as llamacpp */
+    llm->extract_words = NULL;  /* BitNet uses same extract_words as llamacpp */
     llm->matches_expected = bitnet_matches_expected;
     llm->generate_response = bitnet_generate_response;
     llm->state = NULL;

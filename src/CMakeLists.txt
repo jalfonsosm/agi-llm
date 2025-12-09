@@ -232,7 +232,7 @@ target_sources(nagi
 
 target_link_libraries(nagi PRIVATE ${SDL3_TARGET} ${SDL3_TTF_TARGET})
 
-if(NAGI_LLM_ENABLE_LLAMACPP OR NAGI_LLM_ENABLE_BITNET)
+if(NAGI_LLM_ENABLE_LLAMACPP OR NAGI_LLM_ENABLE_BITNET OR NAGI_LLM_ENABLE_CLOUD_API)
     target_link_libraries(nagi PRIVATE nagi-llm)
     target_include_directories(nagi PRIVATE ${CMAKE_SOURCE_DIR}/lib/nagi-llm/include)
 
@@ -277,10 +277,11 @@ if(NAGI_LLM_ENABLE_LLAMACPP OR NAGI_LLM_ENABLE_BITNET)
         endif()
     endif()
     
-    target_compile_definitions(nagi PRIVATE
-        NAGI_ENABLE_LLM=1
-        NAGI_DEFAULT_LLM_MODEL_PATH="${DEFAULT_MODEL_PATH}"
-    )
+    target_compile_definitions(nagi PRIVATE NAGI_ENABLE_LLM=1)
+
+    if(NAGI_LLM_ENABLE_LLAMACPP OR NAGI_LLM_ENABLE_BITNET)
+        target_compile_definitions(nagi PRIVATE NAGI_DEFAULT_LLM_MODEL_PATH="${DEFAULT_MODEL_PATH}")
+    endif()
 
     message(STATUS "LLM support enabled")
     if(DEFINED LLAMA_SOURCE_DIR)
@@ -291,8 +292,8 @@ else()
     message(STATUS "LLM support disabled")
 endif()
 
-# Math library (needed by llama.cpp on Unix)
-if(UNIX)
+
+if((NAGI_LLM_ENABLE_LLAMACPP OR NAGI_LLM_ENABLE_BITNET) AND UNIX)
     target_link_libraries(nagi PRIVATE m dl pthread)
 endif()
 
@@ -392,3 +393,12 @@ add_custom_command(TARGET nagi POST_BUILD
         ${CMAKE_BINARY_DIR}
     COMMENT "Copying NAGI data files to build directory"
 )
+
+if(NAGI_LLM_ENABLE_CLOUD_API)
+    add_custom_command(TARGET nagi POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_SOURCE_DIR}/cloud_config.ini
+            ${CMAKE_BINARY_DIR}/cloud_config.ini
+        COMMENT "Copying cloud_config.ini to build directory"
+    )
+endif()

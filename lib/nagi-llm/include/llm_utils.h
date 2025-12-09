@@ -147,12 +147,6 @@ static const char *SEMANTIC_MATCHING_PROMPT =
 typedef struct nagi_llm nagi_llm_t;
 
 /*
- * Detect language from user input
- * Returns language name ("English", "Spanish", "French", etc.)
- */
-const char *llm_detect_language(nagi_llm_t *llm, const char *input);
-
-/*
  * Get word string from word ID
  * Returns pointer to static buffer with decoded word, or NULL if not found
  */
