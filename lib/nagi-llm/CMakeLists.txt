@@ -25,6 +25,7 @@ target_sources(nagi-llm PRIVATE
     src/nagi_llm.c
     src/nagi_llm_context.c
     src/llm_utils.c
+    src/llm_config_parser.c
 )
 
 # llama.cpp backend

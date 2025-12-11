@@ -5,6 +5,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
+#include <time.h>
 
 static int cloud_matches_expected(nagi_llm_t *llm, const char *input,
                                    const int *expected_word_ids, int expected_count);
@@ -13,7 +14,14 @@ static int cloud_generate_response(nagi_llm_t *llm, const char *game_response,
 
 static int cloud_init(nagi_llm_t *llm, const char *model_path, const nagi_llm_config_t *config) {
     (void)model_path;
-    if (config) llm->config = *config;
+    /* Override with passed config if provided */
+    if (config) {
+        llm->config.temperature = config->temperature;
+        llm->config.temperature_creative_base = config->temperature_creative_base;
+        llm->config.temperature_creative_offset = config->temperature_creative_offset;
+        llm->config.max_tokens = config->max_tokens;
+        llm->config.verbose = config->verbose;
+    }
     
     if (!llm->state) {
         llm->state = (llm_state_t *)calloc(1, sizeof(llm_state_t));
@@ -21,44 +29,25 @@ static int cloud_init(nagi_llm_t *llm, const char *model_path, const nagi_llm_co
     }
     llm->state->initialized = 1;
     
+    /* Calculate randomized creative temperature */
+    srand((unsigned int)time(NULL));
+    float creative_temp = llm->config.temperature_creative_base + 
+                         ((float)(rand() % 100) / 100.0f) * llm->config.temperature_creative_offset;
+    
     nagi_llm_cloud_config_t cloud_config = {
-        .api_url = "https://api.openai.com/v1/chat/completions",
+        .api_url = "",
         .api_key = "",
-        .model = "gpt-3.5-turbo",
-        .temperature = 0.7f,
-        .max_tokens = 150
+        .model = "",
+        .temperature = creative_temp,  /* Use randomized creative temperature */
+        .max_tokens = llm->config.max_tokens
     };
     
-    /* Try to read from cloud_config.ini */
-    FILE *f = fopen("cloud_config.ini", "r");
-    if (f) {
-        char line[1024];
-        while (fgets(line, sizeof(line), f)) {
-            char *eq = strchr(line, '=');
-            if (!eq) continue;
-            
-            char *key = line;
-            while (*key == ' ' || *key == '\t') key++;
-            char *key_end = eq - 1;
-            while (key_end > key && (*key_end == ' ' || *key_end == '\t')) key_end--;
-            *(key_end + 1) = '\0';
-            
-            char *val = eq + 1;
-            while (*val == ' ' || *val == '\t') val++;
-            char *val_end = val + strlen(val) - 1;
-            while (val_end > val && (*val_end == ' ' || *val_end == '\t' || *val_end == '\n' || *val_end == '\r')) val_end--;
-            *(val_end + 1) = '\0';
-            
-            if (strcmp(key, "api_url") == 0) strncpy(cloud_config.api_url, val, sizeof(cloud_config.api_url) - 1);
-            else if (strcmp(key, "api_key") == 0) strncpy(cloud_config.api_key, val, sizeof(cloud_config.api_key) - 1);
-            else if (strcmp(key, "model") == 0) strncpy(cloud_config.model, val, sizeof(cloud_config.model) - 1);
-            else if (strcmp(key, "temperature") == 0) cloud_config.temperature = atof(val);
-            else if (strcmp(key, "max_tokens") == 0) cloud_config.max_tokens = atoi(val);
-        }
-        fclose(f);
-    }
+    /* Copy from unified config */
+    strncpy(cloud_config.api_url, llm->config.api_endpoint, sizeof(cloud_config.api_url) - 1);
+    strncpy(cloud_config.api_key, llm->config.api_key, sizeof(cloud_config.api_key) - 1);
+    strncpy(cloud_config.model, llm->config.model_path, sizeof(cloud_config.model) - 1);
     
-    /* Fallback to environment variable */
+    /* Fallback to environment variable if no API key */
     if (!cloud_config.api_key[0]) {
         const char *api_key = getenv("OPENAI_API_KEY");
         if (api_key && api_key[0]) {
@@ -67,7 +56,7 @@ static int cloud_init(nagi_llm_t *llm, const char *model_path, const nagi_llm_co
     }
     
     if (!cloud_config.api_key[0]) {
-        fprintf(stderr, "Cloud LLM: No API key found. Set OPENAI_API_KEY or create cloud_config.ini\n");
+        fprintf(stderr, "Cloud LLM: No API key found. Set api_key in llm_config.ini or OPENAI_API_KEY env var\n");
         free(llm->state);
         llm->state = NULL;
         return 0;
@@ -137,7 +126,13 @@ nagi_llm_t *nagi_llm_cloud_create(void) {
     llm->generate_response = cloud_generate_response;
     llm->extraction_prompt_template = EXTRACTION_PROMPT_TEMPLATE;
     llm->extraction_prompt_simple = EXTRACTION_PROMPT_SIMPLE;
-    llm->backend = NAGI_LLM_BACKEND_CLOUD;
+    
+    /* Set default temperature values */
+    llm->config.temperature = 0.0f;  /* Extraction temperature (deterministic) */
+    llm->config.temperature_creative_base = 0.3f;
+    llm->config.temperature_creative_offset = 0.2f;
+    llm->config.max_tokens = 512;
+    llm->config.verbose = 0;
     
     return llm;
 }

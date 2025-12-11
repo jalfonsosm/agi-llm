@@ -64,7 +64,9 @@ typedef struct {
     int batch_size;
     int u_batch_size;
     int n_threads;
-    float temperature;
+    float temperature;                          /* Extraction temperature (always 0.0 for deterministic) */
+    float temperature_creative_base;            /* Base creative temperature for response generation */
+    float temperature_creative_offset;          /* Random offset for creative temperature variation */
     float top_p;
     int top_k;
     int max_tokens;
@@ -218,6 +220,13 @@ int nagi_llm_matches_expected(nagi_llm_t *llm, const char *input,
  */
 int nagi_llm_generate_response(nagi_llm_t *llm, const char *game_response,
                                       const char *user_input, char *output, int output_size);
+
+/*
+ * Load unified configuration from llm_config.ini
+ */
+int nagi_llm_load_config(nagi_llm_config_t *config,
+                         nagi_llm_backend_t backend,
+                         const char *config_file);
 
 #ifdef __cplusplus
 }

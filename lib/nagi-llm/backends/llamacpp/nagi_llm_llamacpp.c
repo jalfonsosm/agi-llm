@@ -47,16 +47,22 @@ static int llamacpp_matches_expected(nagi_llm_t *llm, const char *input,
     int current_seq;
     int response_len, gen_count;
     llama_token *tokens;
+    llm_state_t *state;
+    struct llama_batch batch, batch_gen;
+    int i, k, n_eval;
+    int word_id;
+    const char *word_str;
+    int piece_len;
+    char *trimmed;
 
     if (!nagi_llm_ready(llm)) return 0;
     if (expected_count == 0) return 0;
 
     /* Build expected command string from word IDs */
     expected_command[0] = '\0';
-    for (int i = 0; i < expected_count; i++) {
-        int word_id = expected_word_ids[i];
-
-        const char *word_str = get_word_string(llm, word_id);
+    for (i = 0; i < expected_count; i++) {
+        word_id = expected_word_ids[i];
+        word_str = get_word_string(llm, word_id);
 
         if (word_str) {
             if (expected_command[0] != '\0') {
@@ -73,7 +79,7 @@ static int llamacpp_matches_expected(nagi_llm_t *llm, const char *input,
         SEMANTIC_MATCHING_PROMPT,
         expected_command, input);
 
-    llm_state_t *state = llm->state;
+    state = llm->state;
 
     /* Use rotating sequence IDs to avoid KV cache conflicts */
     current_seq = (state->seq_counter++) % 8;
@@ -104,16 +110,16 @@ static int llamacpp_matches_expected(nagi_llm_t *llm, const char *input,
     }
 
     /* Process prompt */
-    struct llama_batch batch = llama_batch_init(llm->config.batch_size, 0, 8);
+    batch = llama_batch_init(llm->config.batch_size, 0, 8);
     if (llm->config.verbose) {
         printf("Processing prompt: %d tokens\n", n_prompt_tokens);
     }
-    for (int i = 0; i < n_prompt_tokens; i += llm->config.batch_size) {
-        int n_eval = n_prompt_tokens - i;
+    for (i = 0; i < n_prompt_tokens; i += llm->config.batch_size) {
+        n_eval = n_prompt_tokens - i;
         if (n_eval > llm->config.batch_size) n_eval = llm->config.batch_size;
 
         batch.n_tokens = n_eval;
-        for (int k = 0; k < n_eval; k++) {
+        for (k = 0; k < n_eval; k++) {
             batch.token[k] = tokens[i + k];
             batch.pos[k] = i + k;
             batch.n_seq_id[k] = 1;
@@ -141,7 +147,7 @@ static int llamacpp_matches_expected(nagi_llm_t *llm, const char *input,
     /* Generate response */
     response_len = 0;
     gen_count = 0;
-    struct llama_batch batch_gen = llama_batch_init(1, 0, 8);
+    batch_gen = llama_batch_init(1, 0, 8);
     if (llm->config.verbose) {
         printf("Starting generation phase, prompt processed up to position %d\n", n_prompt_tokens - 1);
     }
@@ -156,7 +162,7 @@ static int llamacpp_matches_expected(nagi_llm_t *llm, const char *input,
             break;
         }
 
-        int piece_len = llama_token_to_piece(llama_model_get_vocab(state->model),
+        piece_len = llama_token_to_piece(llama_model_get_vocab(state->model),
                                              new_token, piece, sizeof(piece), 0, true);
         if (piece_len > 0 && response_len + piece_len < (int)sizeof(response_buf) - 1) {
             memcpy(response_buf + response_len, piece, piece_len);
@@ -192,12 +198,12 @@ static int llamacpp_matches_expected(nagi_llm_t *llm, const char *input,
     response_buf[response_len] = '\0';
 
     /* Normalize response: convert to lowercase and trim whitespace */
-    for (int i = 0; i < response_len; i++) {
+    for (i = 0; i < response_len; i++) {
         response_buf[i] = tolower((unsigned char)response_buf[i]);
     }
 
     /* Trim leading whitespace */
-    char *trimmed = response_buf;
+    trimmed = response_buf;
     while (*trimmed == ' ' || *trimmed == '\n' || *trimmed == '\r' || *trimmed == '\t') {
         trimmed++;
     }
@@ -244,15 +250,18 @@ static const char *llamacpp_detect_language(nagi_llm_t *llm, const char *input)
 static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response,
                                       const char *user_input, char *output, int output_size)
 {
-    llm_state_t *state = llm->state;
-
+    llm_state_t *state;
     char prompt[NAGI_LLM_MAX_PROMPT_SIZE];
-    // char context_str[512];
     int n_tokens, n_prompt_tokens;
     int current_seq;
     int response_len, gen_count, max_response_tokens;
     char piece[64];
     llama_token *tokens;
+    const char *language;
+    struct llama_batch batch, batch_gen;
+    int i, k, n_eval;
+    int piece_len;
+    char *translate_marker, *start, *end, *check;
 
     if (!nagi_llm_ready(llm)) return 0;
     if (!game_response || !user_input || !output || output_size <= 0) return 0;
@@ -264,9 +273,11 @@ static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response
     if (context && context[0] != '\0') {
         snprintf(context_str, sizeof(context_str), "Game context: %s\n", context);
     */
+    
+    state = llm->state;
 
     /* Detect language if user provided input */
-    const char *language = "English";
+    language = "English";
     if (user_input && user_input[0] != '\0') {
         language = llamacpp_detect_language(llm, user_input);
     } else if (state->detected_language[0]) {
@@ -307,13 +318,13 @@ static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response
     }
 
     /* Process prompt in batches */
-    struct llama_batch batch = llama_batch_init(llm->config.batch_size, 0, 8);
-    for (int i = 0; i < n_prompt_tokens; i += llm->config.batch_size) {
-        int n_eval = n_prompt_tokens - i;
+    batch = llama_batch_init(llm->config.batch_size, 0, 8);
+    for (i = 0; i < n_prompt_tokens; i += llm->config.batch_size) {
+        n_eval = n_prompt_tokens - i;
         if (n_eval > llm->config.batch_size) n_eval = llm->config.batch_size;
 
         batch.n_tokens = n_eval;
-        for (int k = 0; k < n_eval; k++) {
+        for (k = 0; k < n_eval; k++) {
             batch.token[k] = tokens[i + k];
             batch.pos[k] = i + k;
             batch.n_seq_id[k] = 1;
@@ -337,7 +348,7 @@ static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response
     response_len = 0;
     gen_count = 0;
     max_response_tokens = 150;  /* Limit for adventure game responses */
-    struct llama_batch batch_gen = llama_batch_init(1, 0, 8);
+    batch_gen = llama_batch_init(1, 0, 8);
 
     while (response_len < output_size - 1 && gen_count < max_response_tokens) {
         llama_token new_token = llama_sampler_sample(state->sampler_creative, state->ctx, -1);
@@ -347,7 +358,7 @@ static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response
             break;
         }
 
-        int piece_len = llama_token_to_piece(llama_model_get_vocab(state->model),
+        piece_len = llama_token_to_piece(llama_model_get_vocab(state->model),
                                              new_token, piece, sizeof(piece), 0, true);
         if (piece_len > 0 && response_len + piece_len < output_size - 1) {
             memcpy(output + response_len, piece, piece_len);
@@ -371,8 +382,8 @@ static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response
     output[response_len] = '\0';
 
     /* Extract only the translation line (first line or after "Translate:") */
-    char *translate_marker = strstr(output, "Translate:");
-    char *start = translate_marker ? translate_marker + 10 : output;
+    translate_marker = strstr(output, "Translate:");
+    start = translate_marker ? translate_marker + 10 : output;
     
     /* Skip whitespace */
     while (*start == ' ' || *start == '\n' || *start == '\r' || *start == '\t') {
@@ -380,7 +391,7 @@ static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response
     }
     
     /* Find end of first line */
-    char *end = start;
+    end = start;
     while (*end && *end != '\n' && *end != '\r') {
         end++;
     }
@@ -391,7 +402,7 @@ static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response
     while (end > start && (*end == ' ' || *end == '\t' || *end == '?' || *end == '!')) {
         if (*end == '?' || *end == '!') {
             /* Keep if it's the only punctuation at the end */
-            char *check = end - 1;
+            check = end - 1;
             if (check > start && (*check == '?' || *check == '!')) {
                 *end = '\0';
                 end--;
@@ -437,12 +448,15 @@ static void set_error(llm_state_t *state, const char *fmt, ...)
  */
 static int llamacpp_init(nagi_llm_t *llm, const char *model_path, const nagi_llm_config_t *config)
 {
+    struct llama_model_params model_params;
+    struct llama_context_params ctx_params;
+    llm_state_t *state;
+    uint32_t seed;
+    float creative_temp;
+    
     if (!llm) {
         return 0;
     }
-
-    struct llama_model_params model_params;
-    struct llama_context_params ctx_params;
     
     if (llm->state && llm->state->initialized) {
         fprintf(stderr, "LLM: Already initialized\n");
@@ -457,7 +471,7 @@ static int llamacpp_init(nagi_llm_t *llm, const char *model_path, const nagi_llm
         }
     }
     
-    llm_state_t *state = llm->state;
+    state = llm->state;
 
     if (config) {
         memcpy(&llm->config, config, sizeof(nagi_llm_config_t));
@@ -515,7 +529,7 @@ static int llamacpp_init(nagi_llm_t *llm, const char *model_path, const nagi_llm
     }
 
     /* Random seed for variety */
-    uint32_t seed = (uint32_t)time(NULL) ^ (uint32_t)((uintptr_t)state);
+    seed = (uint32_t)time(NULL) ^ (uint32_t)((uintptr_t)state);
     
     /* Create sampler for extraction/semantic (deterministic) */
     state->sampler = llama_sampler_chain_init(llama_sampler_chain_default_params());
@@ -525,7 +539,8 @@ static int llamacpp_init(nagi_llm_t *llm, const char *model_path, const nagi_llm
     llama_sampler_chain_add(state->sampler, llama_sampler_init_dist(seed));
 
     /* Create sampler for response generation (creative with randomized temperature) */
-    float creative_temp = 0.2f + ((float)(seed % 30) / 100.0f);  /* 0.2 to 0.5 */
+    creative_temp = llm->config.temperature_creative_base + 
+                         ((float)(seed % 100) / 100.0f) * llm->config.temperature_creative_offset;
     state->sampler_creative = llama_sampler_chain_init(llama_sampler_chain_default_params());
     llama_sampler_chain_add(state->sampler_creative, llama_sampler_init_top_k(40));
     llama_sampler_chain_add(state->sampler_creative, llama_sampler_init_top_p(0.9f, 1));
@@ -598,12 +613,18 @@ static const char *llamacpp_extract_words(nagi_llm_t *llm, const char *input)
     int current_seq;
     int response_len, gen_count, max_extract_tokens;
     llama_token *tokens;
+    const char *verbs;
+    llm_state_t *state;
+    struct llama_batch batch, batch_gen;
+    int i, k, n_eval;
+    int piece_len;
+    char *trimmed, *end;
 
     if (!nagi_llm_ready(llm)) return input;
     if (!input || input[0] == '\0') return input;
 
     /* Extract game verbs for vocabulary hint */
-    const char *verbs = extract_game_verbs(llm);
+    verbs = extract_game_verbs(llm);
 
     /* Build extraction prompt with vocabulary context */
     if (verbs && verbs[0] != '\0' && llm->extraction_prompt_template) {
@@ -615,7 +636,7 @@ static const char *llamacpp_extract_words(nagi_llm_t *llm, const char *input)
         return input;
     }
 
-    llm_state_t *state = llm->state;
+    state = llm->state;
     current_seq = (state->seq_counter++) % 8;
 
     if (llm->config.verbose) {
@@ -640,13 +661,13 @@ static const char *llamacpp_extract_words(nagi_llm_t *llm, const char *input)
     }
 
     /* Process prompt in batches */
-    struct llama_batch batch = llama_batch_init(llm->config.batch_size, 0, 8);
-    for (int i = 0; i < n_prompt_tokens; i += llm->config.batch_size) {
-        int n_eval = n_prompt_tokens - i;
+    batch = llama_batch_init(llm->config.batch_size, 0, 8);
+    for (i = 0; i < n_prompt_tokens; i += llm->config.batch_size) {
+        n_eval = n_prompt_tokens - i;
         if (n_eval > llm->config.batch_size) n_eval = llm->config.batch_size;
 
         batch.n_tokens = n_eval;
-        for (int k = 0; k < n_eval; k++) {
+        for (k = 0; k < n_eval; k++) {
             batch.token[k] = tokens[i + k];
             batch.pos[k] = i + k;
             batch.n_seq_id[k] = 1;
@@ -670,7 +691,7 @@ static const char *llamacpp_extract_words(nagi_llm_t *llm, const char *input)
     response_len = 0;
     gen_count = 0;
     max_extract_tokens = 10;
-    struct llama_batch batch_gen = llama_batch_init(1, 0, 8);
+    batch_gen = llama_batch_init(1, 0, 8);
 
     while (response_len < (int)sizeof(response_buf) - 1 && gen_count < max_extract_tokens) {
         llama_token new_token = llama_sampler_sample(state->sampler, state->ctx, -1);
@@ -680,7 +701,7 @@ static const char *llamacpp_extract_words(nagi_llm_t *llm, const char *input)
             break;
         }
 
-        int piece_len = llama_token_to_piece(llama_model_get_vocab(state->model),
+        piece_len = llama_token_to_piece(llama_model_get_vocab(state->model),
                                              new_token, piece, sizeof(piece), 0, true);
         if (piece_len > 0 && response_len + piece_len < (int)sizeof(response_buf) - 1) {
             memcpy(response_buf + response_len, piece, piece_len);
@@ -708,17 +729,17 @@ static const char *llamacpp_extract_words(nagi_llm_t *llm, const char *input)
     response_buf[response_len] = '\0';
 
     /* Normalize: trim whitespace and lowercase */
-    char *trimmed = response_buf;
+    trimmed = response_buf;
     while (*trimmed == ' ' || *trimmed == '\n' || *trimmed == '\r' || *trimmed == '\t') {
         trimmed++;
     }
-    char *end = trimmed + strlen(trimmed) - 1;
+    end = trimmed + strlen(trimmed) - 1;
     while (end > trimmed && (*end == ' ' || *end == '\n' || *end == '\r' || *end == '\t')) {
         *end-- = '\0';
     }
 
     /* Convert to lowercase */
-    for (int i = 0; trimmed[i]; i++) {
+    for (i = 0; trimmed[i]; i++) {
         trimmed[i] = tolower((unsigned char)trimmed[i]);
     }
 
@@ -753,7 +774,9 @@ nagi_llm_t *nagi_llm_llamacpp_create(void)
     llm->config.batch_size = NAGI_LLM_DEFAULT_BATCH_SIZE;
     llm->config.u_batch_size = NAGI_LLM_DEFAULT_U_BATCH_SIZE;
     llm->config.n_threads = NAGI_LLM_DEFAULT_THREADS;
-    llm->config.temperature = 0.0f;
+    llm->config.temperature = 0.0f;  /* Extraction temperature (deterministic) */
+    llm->config.temperature_creative_base = 0.3f;
+    llm->config.temperature_creative_offset = 0.2f;
     llm->config.top_p = 0.9f;
     llm->config.top_k = 1;
     llm->config.max_tokens = 5;

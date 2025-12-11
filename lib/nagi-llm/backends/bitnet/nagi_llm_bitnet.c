@@ -9,11 +9,306 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
+#include <time.h>
+#include <stdint.h>
 #include "nagi_llm_bitnet.h"
 #include "../../include/nagi_llm_context.h"
 #include "../../include/llm_utils.h"
 #include "../llama_common.h"
 #include "llama.h"
+
+/* Forward declarations */
+static int bitnet_init(nagi_llm_t *llm, const char *model_path, const nagi_llm_config_t *config);
+static void bitnet_shutdown(nagi_llm_t *llm);
+static const char *bitnet_extract_words(nagi_llm_t *llm, const char *input);
+
+/*
+ * Initialize the BitNet backend (similar to llamacpp but with BitNet-specific settings)
+ */
+static int bitnet_init(nagi_llm_t *llm, const char *model_path, const nagi_llm_config_t *config)
+{
+    if (!llm) return 0;
+
+    struct llama_model_params model_params;
+    struct llama_context_params ctx_params;
+    
+    if (llm->state && llm->state->initialized) {
+        fprintf(stderr, "BitNet: Already initialized\n");
+        return 1;
+    }
+
+    if (!llm->state) {
+        llm->state = (llm_state_t *)calloc(1, sizeof(llm_state_t));
+        if (!llm->state) return 0;
+    }
+    
+    llm_state_t *state = llm->state;
+
+    if (config) {
+        memcpy(&llm->config, config, sizeof(nagi_llm_config_t));
+    }
+
+    if (model_path && model_path[0] != '\0') {
+        strncpy(llm->config.model_path, model_path, NAGI_LLM_MAX_MODEL_PATH - 1);
+        llm->config.model_path[NAGI_LLM_MAX_MODEL_PATH - 1] = '\0';
+    }
+
+    /* Initialize llama.cpp backend */
+    llama_backend_init();
+
+    /* Load model */
+    model_params = llama_model_default_params();
+    model_params.n_gpu_layers = 0;  /* BitNet works best on CPU */
+    model_params.use_mmap = true;
+    model_params.use_mlock = false;
+
+    printf("BitNet: Loading model from %s...\n", llm->config.model_path);
+    state->model = llama_model_load_from_file(llm->config.model_path, model_params);
+    if (!state->model) {
+        fprintf(stderr, "BitNet: Failed to load model: %s\n", llm->config.model_path);
+        free(state);
+        llm->state = NULL;
+        return 0;
+    }
+
+    /* Create context */
+    ctx_params = llama_context_default_params();
+    ctx_params.n_ctx = llm->config.context_size;
+    ctx_params.n_batch = llm->config.batch_size;
+    ctx_params.n_ubatch = llm->config.u_batch_size;
+    ctx_params.n_threads = llm->config.n_threads;
+    ctx_params.n_threads_batch = llm->config.n_threads;
+    ctx_params.n_seq_max = llm->config.n_seq_max;
+
+    state->ctx = llama_init_from_model(state->model, ctx_params);
+    if (!state->ctx) {
+        fprintf(stderr, "BitNet: Failed to create context\n");
+        llama_model_free(state->model);
+        free(state);
+        llm->state = NULL;
+        return 0;
+    }
+
+    /* Random seed for variety */
+    uint32_t seed = (uint32_t)time(NULL) ^ (uint32_t)((uintptr_t)state);
+    
+    /* Create sampler for extraction/semantic (deterministic) */
+    state->sampler = llama_sampler_chain_init(llama_sampler_chain_default_params());
+    llama_sampler_chain_add(state->sampler, llama_sampler_init_top_k(llm->config.top_k));
+    llama_sampler_chain_add(state->sampler, llama_sampler_init_top_p(llm->config.top_p, 1));
+    llama_sampler_chain_add(state->sampler, llama_sampler_init_temp(llm->config.temperature));
+    llama_sampler_chain_add(state->sampler, llama_sampler_init_dist(seed));
+
+    /* Create sampler for response generation (creative with randomized temperature) */
+    float creative_temp = llm->config.temperature_creative_base + 
+                         ((float)(seed % 100) / 100.0f) * llm->config.temperature_creative_offset;
+    state->sampler_creative = llama_sampler_chain_init(llama_sampler_chain_default_params());
+    llama_sampler_chain_add(state->sampler_creative, llama_sampler_init_top_k(40));
+    llama_sampler_chain_add(state->sampler_creative, llama_sampler_init_top_p(0.9f, 1));
+    llama_sampler_chain_add(state->sampler_creative, llama_sampler_init_temp(creative_temp));
+    llama_sampler_chain_add(state->sampler_creative, llama_sampler_init_dist(seed + 1));
+    
+    if (llm->config.verbose) {
+        printf("BitNet Sampler: seed=%u, creative_temp=%.2f\n", seed, creative_temp);
+    }
+
+    state->initialized = 1;
+    state->seq_counter = 0;
+
+    if (llm->config.verbose) {
+        printf("BitNet: Initialized successfully\n");
+        printf("  Context size: %d\n", llm->config.context_size);
+        printf("  Batch size: %d\n", llm->config.batch_size);
+        printf("  Threads: %d\n", llm->config.n_threads);
+        printf("  Sequences: %d\n", llm->config.n_seq_max);
+    }
+
+    return 1;
+}
+
+/*
+ * Shutdown the BitNet backend
+ */
+static void bitnet_shutdown(nagi_llm_t *llm)
+{
+    llm_state_t *state = llm->state;
+
+    if (!state) return;
+
+    if (llm->config.verbose) {
+        fprintf(stderr, "BitNet: Shutting down\n");
+    }
+
+    if (state->sampler) {
+        llama_sampler_free(state->sampler);
+    }
+    if (state->sampler_creative) {
+        llama_sampler_free(state->sampler_creative);
+    }
+    if (state->ctx) {
+        llama_free(state->ctx);
+    }
+    if (state->model) {
+        llama_model_free(state->model);
+    }
+
+    llama_backend_free();
+
+    free(state);
+    llm->state = NULL;
+
+    if (llm->config.verbose) {
+        printf("BitNet: Shutdown complete\n");
+    }
+}
+
+/*
+ * Extract verb and noun from user input (same as llamacpp)
+ */
+static const char *bitnet_extract_words(nagi_llm_t *llm, const char *input)
+{
+    static char response_buf[NAGI_LLM_MAX_RESPONSE_SIZE];
+    char prompt[NAGI_LLM_MAX_PROMPT_SIZE];
+    char piece[64];
+    int n_tokens, n_prompt_tokens;
+    int current_seq;
+    int response_len, gen_count, max_extract_tokens;
+    llama_token *tokens;
+
+    if (!nagi_llm_ready(llm)) return input;
+    if (!input || input[0] == '\0') return input;
+
+    /* Extract game verbs for vocabulary hint */
+    const char *verbs = extract_game_verbs(llm);
+
+    /* Build extraction prompt with vocabulary context */
+    if (verbs && verbs[0] != '\0' && llm->extraction_prompt_template) {
+        snprintf(prompt, sizeof(prompt), llm->extraction_prompt_template,
+                 verbs, verbs, verbs, input);
+    } else if (llm->extraction_prompt_simple) {
+        snprintf(prompt, sizeof(prompt), llm->extraction_prompt_simple, input);
+    } else {
+        return input;
+    }
+
+    llm_state_t *state = llm->state;
+    current_seq = (state->seq_counter++) % 8;
+
+    if (llm->config.verbose) {
+        printf("\n=== BitNet Extraction ===\n");
+        printf("Input: \"%s\"\n", input);
+        printf("Using sequence ID: %d\n", current_seq);
+    }
+
+    /* Clear KV cache for this sequence */
+    llama_kv_cache_seq_rm(state->ctx, current_seq, -1, -1);
+
+    /* Tokenize prompt */
+    n_tokens = llama_n_ctx(state->ctx);
+    tokens = (llama_token *)malloc(n_tokens * sizeof(llama_token));
+    n_prompt_tokens = llama_tokenize(state->model,
+                                     prompt, (int)strlen(prompt),
+                                     tokens, n_tokens, true, true);
+    if (n_prompt_tokens < 0) {
+        free(tokens);
+        return input;
+    }
+
+    /* Process prompt in batches */
+    struct llama_batch batch = llama_batch_init(llm->config.batch_size, 0, 8);
+    for (int i = 0; i < n_prompt_tokens; i += llm->config.batch_size) {
+        int n_eval = n_prompt_tokens - i;
+        if (n_eval > llm->config.batch_size) n_eval = llm->config.batch_size;
+
+        batch.n_tokens = n_eval;
+        for (int k = 0; k < n_eval; k++) {
+            batch.token[k] = tokens[i + k];
+            batch.pos[k] = i + k;
+            batch.n_seq_id[k] = 1;
+            batch.seq_id[k][0] = current_seq;
+            batch.logits[k] = false;
+        }
+        if (i + n_eval == n_prompt_tokens) {
+            batch.logits[n_eval - 1] = true;
+        }
+
+        if (llama_decode(state->ctx, batch) != 0) {
+            llama_batch_free(batch);
+            free(tokens);
+            return input;
+        }
+    }
+    llama_batch_free(batch);
+    free(tokens);
+
+    /* Generate response (extract English words) */
+    response_len = 0;
+    gen_count = 0;
+    max_extract_tokens = 10;
+    struct llama_batch batch_gen = llama_batch_init(1, 0, 8);
+
+    while (response_len < (int)sizeof(response_buf) - 1 && gen_count < max_extract_tokens) {
+        llama_token new_token = llama_sampler_sample(state->sampler, state->ctx, -1);
+        llama_sampler_accept(state->sampler, new_token);
+
+        if (llama_token_is_eog(state->model, new_token)) {
+            break;
+        }
+
+        int piece_len = llama_token_to_piece(state->model,
+                                             new_token, piece, sizeof(piece), 0, true);
+        if (piece_len > 0 && response_len + piece_len < (int)sizeof(response_buf) - 1) {
+            memcpy(response_buf + response_len, piece, piece_len);
+            response_len += piece_len;
+
+            if (strchr(piece, '\n') != NULL) {
+                break;
+            }
+        }
+
+        batch_gen.n_tokens = 1;
+        batch_gen.token[0] = new_token;
+        batch_gen.pos[0] = n_prompt_tokens + gen_count;
+        batch_gen.n_seq_id[0] = 1;
+        batch_gen.seq_id[0][0] = current_seq;
+        batch_gen.logits[0] = true;
+
+        if (llama_decode(state->ctx, batch_gen) != 0) {
+            break;
+        }
+        gen_count++;
+    }
+
+    llama_batch_free(batch_gen);
+    response_buf[response_len] = '\0';
+
+    /* Normalize: trim whitespace and lowercase */
+    char *trimmed = response_buf;
+    while (*trimmed == ' ' || *trimmed == '\n' || *trimmed == '\r' || *trimmed == '\t') {
+        trimmed++;
+    }
+    char *end = trimmed + strlen(trimmed) - 1;
+    while (end > trimmed && (*end == ' ' || *end == '\n' || *end == '\r' || *end == '\t')) {
+        *end-- = '\0';
+    }
+
+    /* Convert to lowercase */
+    for (int i = 0; trimmed[i]; i++) {
+        trimmed[i] = tolower((unsigned char)trimmed[i]);
+    }
+
+    if (llm->config.verbose) {
+        printf("Extracted: \"%s\"\n", trimmed);
+        printf("===================\n\n");
+    }
+
+    /* Copy trimmed result back to start of buffer */
+    if (trimmed != response_buf) {
+        memmove(response_buf, trimmed, strlen(trimmed) + 1);
+    }
+
+    return response_buf;
+}
 
 /*
  * Semantic matching - uses LLM to determine if input matches expected command
@@ -363,9 +658,9 @@ nagi_llm_t *nagi_llm_bitnet_create(void)
     llm->extraction_prompt_template = EXTRACTION_PROMPT_TEMPLATE;
     llm->extraction_prompt_simple = EXTRACTION_PROMPT_SIMPLE;
     
-    llm->init = NULL;  /* BitNet uses same init as llamacpp */
-    llm->shutdown = NULL;  /* BitNet uses same shutdown as llamacpp */
-    llm->extract_words = NULL;  /* BitNet uses same extract_words as llamacpp */
+    llm->init = bitnet_init;
+    llm->shutdown = bitnet_shutdown;
+    llm->extract_words = bitnet_extract_words;
     llm->matches_expected = bitnet_matches_expected;
     llm->generate_response = bitnet_generate_response;
     llm->state = NULL;
@@ -376,7 +671,9 @@ nagi_llm_t *nagi_llm_bitnet_create(void)
     llm->config.batch_size = NAGI_LLM_DEFAULT_BATCH_SIZE;
     llm->config.u_batch_size = NAGI_LLM_DEFAULT_U_BATCH_SIZE;
     llm->config.n_threads = 6;
-    llm->config.temperature = 0.0f;
+    llm->config.temperature = 0.0f;  /* Extraction temperature (deterministic) */
+    llm->config.temperature_creative_base = 0.3f;
+    llm->config.temperature_creative_offset = 0.2f;
     llm->config.top_p = 0.9f;
     llm->config.top_k = 1;
     llm->config.max_tokens = 5;

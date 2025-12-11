@@ -235,8 +235,15 @@ void nagi_init()
 		if (!g_llm) {
 			fprintf(stderr, "Failed to create LLM instance\n");
 		} else {
-			/* Initialize with model path and NULL config (uses defaults) */
-			if (!nagi_llm_init(g_llm, llm_model_path, NULL)) {
+			int config_loaded = 0;
+			nagi_llm_config_t config;
+
+    			if (nagi_llm_load_config(&config, backend, NULL)) {
+				config_loaded = 1;
+    			}
+    
+			/* Initialize with model path and config */
+			if (!nagi_llm_init(g_llm, llm_model_path, config_loaded? &config : NULL)) {
 				fprintf(stderr, "LLM initialization failed for model: %s\n", llm_model_path);
 				nagi_llm_destroy(g_llm);
 				g_llm = NULL;

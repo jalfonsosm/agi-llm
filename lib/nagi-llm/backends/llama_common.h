@@ -41,11 +41,18 @@ static inline const char *llama_common_detect_language(nagi_llm_t *llm, const ch
                                                        struct llama_context *ctx,
                                                        struct llama_sampler *sampler)
 {
-    llm_state_t *state = llm->state;
+    llm_state_t *state;
     char prompt[512];
     int n_tokens, n_prompt_tokens;
     llama_token *tokens;
-
+    int lang_seq;
+    struct llama_batch batch;
+    char detected[64];
+    int detected_len;
+    int i;
+    
+    state = llm->state;
+    
     if (!nagi_llm_ready(llm)) return "English";
     if (!input || input[0] == '\0') {
         return state->detected_language[0] ? state->detected_language : "English";
@@ -65,18 +72,19 @@ static inline const char *llama_common_detect_language(nagi_llm_t *llm, const ch
     }
 
     /* Use dedicated sequence 7 for language detection */
-    int lang_seq = 7;
+    lang_seq = 7;
     
     /* Clear KV cache */
     LLAMA_KV_CLEAR(ctx, lang_seq, -1, -1);
 
-    struct llama_batch batch = llama_batch_init(llm->config.batch_size, 0, 1);
-    for (int i = 0; i < n_prompt_tokens; i += llm->config.batch_size) {
+    batch = llama_batch_init(llm->config.batch_size, 0, 1);
+    for (i = 0; i < n_prompt_tokens; i += llm->config.batch_size) {
         int n_eval = n_prompt_tokens - i;
+        int k;
         if (n_eval > llm->config.batch_size) n_eval = llm->config.batch_size;
 
         batch.n_tokens = n_eval;
-        for (int k = 0; k < n_eval; k++) {
+        for (k = 0; k < n_eval; k++) {
             batch.token[k] = tokens[i + k];
             batch.pos[k] = i + k;
             batch.n_seq_id[k] = 1;
@@ -94,19 +102,22 @@ static inline const char *llama_common_detect_language(nagi_llm_t *llm, const ch
     free(tokens);
 
     /* Sample language name with greedy decoding */
-    char detected[64] = "";
-    int detected_len = 0;
+    detected[0] = '\0';
+    detected_len = 0;
     
-    for (int i = 0; i < 15 && detected_len < 60; i++) {
-        llama_token lang_token = llama_sampler_sample(sampler, ctx, -1);
+    for (i = 0; i < 15 && detected_len < 60; i++) {
+        llama_token lang_token;
+        char piece[16];
+        int piece_len;
+        
+        lang_token = llama_sampler_sample(sampler, ctx, -1);
         llama_sampler_accept(sampler, lang_token);
         
         /* Check for end of generation */
         if (LLAMA_IS_EOG(model, lang_token)) break;
         
-        char piece[16];
         /* Token to piece */
-        int piece_len = LLAMA_TOKEN_TO_PIECE(model, lang_token, piece, sizeof(piece));
+        piece_len = LLAMA_TOKEN_TO_PIECE(model, lang_token, piece, sizeof(piece));
         
         if (piece_len > 0) {
             if (detected_len + piece_len < 60) {
@@ -116,12 +127,15 @@ static inline const char *llama_common_detect_language(nagi_llm_t *llm, const ch
             if (strchr(piece, '\n')) break;
         }
     }
+    char *p;
+    char *end;
+    
     detected[detected_len] = '\0';
     
     /* Trim and validate */
-    char *p = detected;
+    p = detected;
     while (*p == ' ' || *p == '\n') p++;
-    char *end = p + strlen(p) - 1;
+    end = p + strlen(p) - 1;
     while (end > p && (*end == ' ' || *end == '\n' || *end == '.')) *end-- = '\0';
     
     /* Validate it's a known language */
