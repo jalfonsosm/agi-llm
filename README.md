@@ -45,25 +45,25 @@ With extensive modernization including SDL3 support, Unicode text rendering (SDL
 
 ### Supported Backends
 
-1. **llama.cpp** ✅ - Tested and working
-   - Local inference with GGUF models
-   - GPU acceleration (Metal on macOS)
-   - Models: Llama 3.2 3B, Llama 3.1 8B, Qwen 2.5 7B
+1. **llama.cpp** ✅ - Local inference
+   - GGUF models with GPU acceleration
+   - Models: Llama 3.2 3B, Qwen 2.5 7B, Gemma 3 4B
+   - Requires model download (2-5GB)
 
-2. **BitNet** 🚧 - Prototype (WIP)
+2. **BitNet** 🚧 - Experimental
    - 1.58-bit quantized models
-   - Needs optimization (currently slower than expected)
+   - Needs optimization
 
-3. **Cloud API** 🚧 - Prototype (WIP)
+3. **Cloud API** 🚧 - Experimental
    - OpenAI-compatible endpoints
-   - Supports: Hugging Face, Groq, OpenAI, local Ollama...
+   - Supports: Hugging Face, Groq, Cerebras, OpenAI, Ollama...
+   - No local setup required, just API key
 
 ### Known Limitations
 
 - **Blocking I/O**: LLM requests block the main game thread. Async implementation would require extensive NAGI refactoring
 - **Model Quality**: Small models (3B-8B params) can produce incoherent responses with high temperature
 - **Performance**: BitNet backend needs optimization
-- **Limited Testing**: Only llama.cpp backend is production-ready
 
 ### Future Improvements
 
@@ -99,56 +99,89 @@ With extensive modernization including SDL3 support, Unicode text rendering (SDL
 - **BitNet**: Built automatically if enabled
 - **Cloud API**: Only needs CURL
 
+## Project Structure
+
+```
+agi-llm/
+├── llm_config_example.ini      # Configuration template
+├── lib/nagi-llm/               # LLM integration library
+│   ├── backends/               # Backend implementations
+│   │   ├── llamacpp/           # Local llama.cpp backend
+│   │   ├── bitnet/             # BitNet quantized backend
+│   │   └── cloud/              # Cloud API backend
+│   └── src/
+│       └── llm_config_parser.c # Unified configuration parser
+└── src/                        # Main NAGI source
+```
+
+## Configuration
+
+### Unified Configuration (llm_config.ini)
+
+All backends use a single configuration file `llm_config.ini`:
+
+```ini
+[common]
+temperature_extraction = 0.0       # Always 0.0 for deterministic extraction
+temperature_creative_base = 0.3    # Base temperature for responses
+temperature_creative_offset = 0.2  # Random variation range
+max_tokens = 512
+verbose = 1
+
+[llamacpp]
+context_size = 4096
+use_gpu = 1
+# ... llamacpp specific settings
+
+[bitnet]
+context_size = 4096
+use_gpu = 0
+# ... bitnet specific settings
+
+[cloud]
+api_url = https://api-inference.huggingface.co/models/meta-llama/Llama-3.2-3B-Instruct/v1/chat/completions
+api_key = YOUR_API_KEY_HERE
+model = meta-llama/Llama-3.2-3B-Instruct
+```
+
 ## How to Build
 
-### Linux/macOS
+### Quick Start 
+
+#### Local llama.cpp backend
 
 ```bash
-# Basic build (no LLM)
 mkdir build && cd build
-cmake ..
-make
-
-# With llama.cpp backend (default)
 cmake .. -DNAGI_LLM_ENABLE_LLAMACPP=ON
 make
-
-# With BitNet backend
-cmake .. -DNAGI_LLM_ENABLE_BITNET=ON -DNAGI_LLM_ENABLE_LLAMACPP=OFF
-make
-
-# With Cloud API backend
-cmake .. -DNAGI_LLM_ENABLE_CLOUD_API=ON -DNAGI_LLM_ENABLE_LLAMACPP=OFF
-make
+./run.sh /path/to/game
 ```
 
-### Model Selection (llama.cpp)
-
-Choose model via CMake:
+#### BitNet backend
 
 ```bash
-# Llama 3.2 3B (default, 2.3GB)
-cmake .. -DMODEL_NAME=LLAMA3
-
-# Llama 3.1 8B (better multilingual, 4.9GB)
-cmake .. -DMODEL_NAME=LLAMA3_8B
-
-# Qwen 2.5 7B (excellent multilingual, 4.8GB)
-cmake .. -DMODEL_NAME=QWEN2
-
-# Gemma 3 4B
-cmake .. -DMODEL_NAME=GEMMA3
-
-# Phi-3 4B
-cmake .. -DMODEL_NAME=PHI3
+mkdir build && cd build
+cmake .. -DNAGI_LLM_ENABLE_BITNET=ON
+make
+./run.sh /path/to/game
 ```
 
-### Cloud API Setup
+#### Hugging Face Cloud backend
 
-1. Copy config: `cp cloud_config_example.ini cloud_config.ini`
-2. Get free API key from  [Hugging Face](https://huggingface.co/settings/tokens), [Cerebras](https://console.cerebras.ai), [Groq](https://console.groq.com)...
-3. Edit `cloud_config.ini` with your key and the proper endpoint
-4. Build with cloud backend enabled
+```bash
+# 1. Get free API key from https://huggingface.co/settings/tokens
+# 2. Edit llm_config.ini and set your api_key
+mkdir build && cd build
+cmake .. -DNAGI_LLM_ENABLE_CLOUD_API=ON
+make
+./run.sh /path/to/game
+```
+
+#### No LLM (classic NAGI)
+
+```bash
+cmake ..
+```
 
 ## How to Run
 
@@ -196,12 +229,7 @@ NAGI's source is released under the X11 license (compatible with GPL).
 
 ### AI-Assisted Development
 
-This LLM integration was developed with assistance from AI coding tools:
-- Claude (Anthropic)
-- Amazon Q Developer
-- DeepSeek
-- GitHub Copilot
-- Gemini AI (Google)
+This LLM integration was developed with assistance from several AI coding tools.
 
 ---
 
