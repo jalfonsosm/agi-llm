@@ -137,13 +137,21 @@ if(NAGI_LLM_ENABLE_LLAMACPP)
         message(FATAL_ERROR "Unknown MODEL_NAME: ${MODEL_NAME}. Options: LLAMA3, LLAMA3_8B, QWEN2, GEMMA3, PHI3")
     endif()
 
+    # Build command varies by generator type
+    # Multi-config generators (MSVC, Xcode) use --config, single-config (Makefile, Ninja) don't
+    if(MSVC OR CMAKE_GENERATOR STREQUAL "Xcode")
+        set(LLAMA_BUILD_CMD ${CMAKE_COMMAND} --build <BINARY_DIR> --config ${CMAKE_BUILD_TYPE})
+    else()
+        set(LLAMA_BUILD_CMD ${CMAKE_COMMAND} --build <BINARY_DIR>)
+    endif()
+
     ExternalProject_Add(llama_cpp
         GIT_REPOSITORY "https://github.com/ggerganov/llama.cpp.git"
         GIT_TAG master
         PREFIX ${LLAMA_PREFIX}
         UPDATE_COMMAND ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> git submodule update --init --recursive
         CMAKE_ARGS ${LLAMA_CMAKE_FLAGS}
-        BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --config ${CMAKE_BUILD_TYPE}
+        BUILD_COMMAND ${LLAMA_BUILD_CMD}
         INSTALL_COMMAND ""
     )
 
@@ -182,19 +190,20 @@ if(NAGI_LLM_ENABLE_LLAMACPP)
         # Base backend libs
         set(GGML_BACKEND_LIBS ${LLAMA_BUILD_DIR}/ggml/src/libggml-cpu.a)
 
-        # Add CUDA if available on Linux
-        set(CUDA_LIB ${LLAMA_BUILD_DIR}/ggml/src/libggml-cuda.a)
-        if(EXISTS ${CUDA_LIB})
-            list(APPEND GGML_BACKEND_LIBS ${CUDA_LIB})
-            message(STATUS "CUDA backend found: ${CUDA_LIB}")
-        endif()
-
-        # Add Metal on macOS (handled separately above)
+        # Add platform-specific backends
         if(APPLE)
+            # On macOS, always add Metal and BLAS backends (Accelerate framework provides BLAS)
+            # Don't use EXISTS check because ExternalProject libraries don't exist yet during configuration
             set(METAL_LIB ${LLAMA_BUILD_DIR}/ggml/src/ggml-metal/libggml-metal.a)
-            if(EXISTS ${METAL_LIB})
-                list(APPEND GGML_BACKEND_LIBS ${METAL_LIB})
-            endif()
+            set(BLAS_LIB ${LLAMA_BUILD_DIR}/ggml/src/ggml-blas/libggml-blas.a)
+            list(APPEND GGML_BACKEND_LIBS ${METAL_LIB})
+            list(APPEND GGML_BACKEND_LIBS ${BLAS_LIB})
+            message(STATUS "Metal and BLAS backends enabled for macOS")
+        elseif(UNIX)
+            # Add CUDA on Linux if enabled
+            set(CUDA_LIB ${LLAMA_BUILD_DIR}/ggml/src/ggml-cuda/libggml-cuda.a)
+            list(APPEND GGML_BACKEND_LIBS ${CUDA_LIB})
+            message(STATUS "CUDA backend enabled for Linux")
         endif()
     endif()
 
