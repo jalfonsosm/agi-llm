@@ -4,12 +4,53 @@
         {
             "label": "build-nagi-debug",
             "type": "shell",
-            "command": "${workspaceFolder}/build.sh",
-            "args": ["Debug"],
+            "windows": {
+                "command": "& '${workspaceFolder}\\build.bat' Debug",
+                "options": {
+                    "shell": {
+                        "executable": "powershell.exe",
+                        "args": ["-NoProfile", "-Command"]
+                    }
+                }
+            },
+            "linux": {
+                "command": "${workspaceFolder}/build.sh",
+                "args": ["Debug"]
+            },
+            "osx": {
+                "command": "${workspaceFolder}/build.sh",
+                "args": ["Debug"]
+            },
             "group": {
                 "kind": "build",
                 "isDefault": true
             },
+            "presentation": {
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "build-nagi-release",
+            "type": "shell",
+            "windows": {
+                "command": "& '${workspaceFolder}\\build.bat' Release",
+                "options": {
+                    "shell": {
+                        "executable": "powershell.exe",
+                        "args": ["-NoProfile", "-Command"]
+                    }
+                }
+            },
+            "linux": {
+                "command": "${workspaceFolder}/build.sh",
+                "args": ["Release"]
+            },
+            "osx": {
+                "command": "${workspaceFolder}/build.sh",
+                "args": ["Release"]
+            },
+            "group": "build",
             "presentation": {
                 "reveal": "always"
             },

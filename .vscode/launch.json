@@ -2,13 +2,25 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug Nagi (build/nagi)",
+            "name": "Debug Nagi (Windows)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/nagi.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/games/kq1",
+            "environment": [],
+            "console": "integratedTerminal",
+            "preLaunchTask": "build-nagi-debug"
+        },
+        {
+            "name": "Debug Nagi (Linux/macOS)",
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/nagi",
-            "args": ["../games/kq1"],
+            "args": [],
             "stopAtEntry": false,
-            "cwd": "${workspaceFolder}/build",
+            "cwd": "${workspaceFolder}/games/kq1",
             "environment": [],
             "externalConsole": false,
             "MIMode": "lldb",

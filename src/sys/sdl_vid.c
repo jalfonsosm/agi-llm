@@ -390,7 +390,7 @@ void vid_palette_get_color(u8 index, u8 *r, u8 *g, u8 *b)
 	assert(video_data.palette->ncolors > 0);
 
 	/* Wrap index to available palette colors (e.g., CGA has only 4 colors) */
-	palette_index = index % (u8)video_data.palette->ncolors;
+	palette_index = index % video_data.palette->ncolors;
 
 	colors = video_data.palette->colors;
 	*r = colors[palette_index].r;

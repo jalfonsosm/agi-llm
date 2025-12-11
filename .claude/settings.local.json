@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmd.exe /c clean_build.bat)",
+      "Bash(cmake --help:*)",
+      "Bash(powershell.exe -Command \".\\build_msbuild.bat 2>&1 | Select-Object -First 100\")",
+      "Bash(echo:*)",
+      "Bash(powershell.exe -Command \".\\build_msbuild.bat 2>&1 | Select-String -Pattern ''CUDA|cuda|error|Error|ERROR'' -Context 1,1 | Select-Object -First 50\")",
+      "Bash(powershell.exe -Command \".\\build_msbuild.bat 2>&1 | Select-String -Pattern ''VCTargetsPath|CUDA|Error|error'' -Context 0,1 | Select-Object -First 60\")",
+      "Bash(powershell.exe -Command \"& { $env:CUDA_PATH = ''C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.1''; $env:CUDA_MSBUILD_PATH = \"\"$env:CUDA_PATH\\extras\\visual_studio_integration\\MSBuildExtensions\"\"; if ($env:VCTargetsPath) { $env:VCTargetsPath = \"\"$env:CUDA_MSBUILD_PATH;$env:VCTargetsPath\"\" } else { $env:VCTargetsPath = $env:CUDA_MSBUILD_PATH }; Write-Host \"\"VCTargetsPath=$env:VCTargetsPath\"\"; cmake --version }\")",
+      "Bash(cmd.exe /c setup_cuda_hardlinks.bat)",
+      "Bash(powershell.exe -Command \"& cmd /c setup_cuda_hardlinks.bat 2>&1\")",
+      "Bash(powershell.exe -Command \"& ''c:\\dev\\agi-llm\\setup_cuda_hardlinks.bat''\")",
+      "Bash(dir \"C:\\Program Files (x86)\\Microsoft Visual Studio\\18\\BuildTools\\MSBuild\\Microsoft\\VC\\v180\\BuildCustomizations\\CUDA*\")",
+      "Bash(powershell.exe -Command \"cmd /c ''mklink /H \"\"C:\\test_hardlink.txt\"\" \"\"C:\\Windows\\System.ini\"\" 2>&1 && dir C:\\test_hardlink.txt && del C:\\test_hardlink.txt''\")",
+      "Bash(cmd.exe /c build.bat)",
+      "Bash(powershell.exe -Command \".\\build.bat 2>&1 | Select-Object -First 150\")",
+      "Bash(powershell.exe -Command \".\\build.bat 2>&1 | Select-String -Pattern ''llama|Vulkan|shader|error|Error|Building'' -Context 0,1 | Select-Object -First 80\")",
+      "Bash(find:*)",
+      "Bash(tasklist:*)",
+      "Bash(powershell.exe -Command \".\\build.bat 2>&1 | Tee-Object -FilePath build_log.txt\")",
+      "Bash(ls:*)",
+      "Bash(taskkill:*)",
+      "Bash(taskkill //F //IM nmake.exe //T)",
+      "Bash(powershell.exe -Command:*)",
+      "Bash(dir:*)",
+      "Bash(cmd.exe /c \"dir /s /b build\\_deps\\llama\\src\\llama_cpp-build\\ggml\\src\\*.lib\")",
+      "Bash(cmd.exe /c \"dir /b build\\_deps\\llama\\src\\llama_cpp-build\\ggml\\src\\*.lib 2>nul\")",
+      "Bash(cmd.exe /c \"dir /s /b build\\_deps\\llama\\src\\llama_cpp-build\\ggml 2>nul | findstr /i \"\"vulkan cpu base\\.lib\"\" | findstr /i \"\".lib$\"\"\")",
+      "Bash(cmd.exe /c \"cmake -S . -B build -G \"\"NMake Makefiles\"\" -DCMAKE_BUILD_TYPE=Release -DNAGI_LLM_ENABLE_LLAMACPP=ON\")",
+      "Bash(cmd.exe /c \"cd build && cmake --build . --target llama_cpp 2>&1 | findstr /i \"\"vulkan ggml-vulkan Built\"\" | more\")",
+      "Bash(cmake --build:*)",
+      "Bash(tee:*)",
+      "Bash(cmd.exe /c \"rd /s /q build 2>nul & echo Build cleaned\")",
+      "Bash(ninja:*)",
+      "Bash(cmd.exe /c \"rd /s /q build 2>nul & echo Build directory cleaned\")",
+      "Bash(cmd.exe /c \"rd /s /q build 2>nul\")",
+      "Bash(cmd /c \"build.bat Debug 2>&1 | findstr /n /c:\"\"C:\\Program\"\"\")",
+      "Bash(cmd.exe /c \"cd /d C:\\dev\\agi-llm && echo === NAGI Build Script === && echo Build type: Debug && set\")",
+      "Bash(cmd.exe /c \"echo off && set VSWHERE=\"\"%ProgramFiles(x86)%\\Microsoft Visual Studio\\Installer\\vswhere.exe\"\" && if exist %VSWHERE% (echo Found) else (echo Not found)\")"
+    ]
+  }
+}

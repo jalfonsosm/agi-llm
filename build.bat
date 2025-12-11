@@ -3,31 +3,28 @@ REM Build script for NAGI (SDL3) - Windows
 
 setlocal enabledelayedexpansion
 
-set SCRIPT_DIR=%~dp0
-set BUILD_DIR=%SCRIPT_DIR%build
+set "SCRIPT_DIR=%~dp0"
+set "BUILD_DIR=%SCRIPT_DIR%build"
 set BUILD_TYPE=%1
 if "%BUILD_TYPE%"=="" set BUILD_TYPE=Release
 
 echo === NAGI Build Script ===
 echo Build type: %BUILD_TYPE%
+echo Script dir: %SCRIPT_DIR%
+echo Build dir: %BUILD_DIR%
 echo.
 
-REM Check if VS environment is already configured
-if defined VCINSTALLDIR (
-    echo Using existing Visual Studio environment
-    goto :build
-)
-
-REM Find and setup Visual Studio environment
+REM Always find and setup Visual Studio environment (don't trust inherited env)
+REM This ensures we get the correct VS installation even if run from IDE
 echo Searching for Visual Studio...
-set VSWHERE="%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
-if not exist %VSWHERE% (
+set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+if not exist "%VSWHERE%" (
     echo ERROR: Visual Studio not found.
     echo Please run from "Developer Command Prompt" or install VS Build Tools.
     goto :error
 )
 
-for /f "usebackq tokens=*" %%i in (`%VSWHERE% -latest -property installationPath`) do (
+for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -property installationPath`) do (
     set VS_PATH=%%i
 )
 
