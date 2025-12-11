@@ -137,6 +137,7 @@ nagi_llm_t *nagi_llm_cloud_create(void) {
     llm->generate_response = cloud_generate_response;
     llm->extraction_prompt_template = EXTRACTION_PROMPT_TEMPLATE;
     llm->extraction_prompt_simple = EXTRACTION_PROMPT_SIMPLE;
+    llm->backend = NAGI_LLM_BACKEND_CLOUD;
     
     return llm;
 }

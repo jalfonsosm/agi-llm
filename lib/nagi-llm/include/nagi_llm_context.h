@@ -16,14 +16,12 @@
 
 #ifndef NAGI_LLM_LIB_CONTEXT_H
 
+#define NAGI_LLM_LIB_CONTEXT_H
+
 /* Basic types (independent of nagi) */
 typedef unsigned char u8;
 typedef unsigned short u16;
 typedef unsigned int u32;
-
-#define NAGI_LLM_LIB_CONTEXT_H
-
-
 
 #ifdef __cplusplus
 extern "C" {
@@ -182,11 +180,6 @@ void llm_context_update_inventory(void);
  * @param description: Human-readable description of what this flag means
  */
 void llm_context_track_flag(int flag_num, const char *description);
-
-/*
- * Update all tracked flags
- */
-void llm_context_update_flags(void);
 
 /*
  * Build the context string for LLM input

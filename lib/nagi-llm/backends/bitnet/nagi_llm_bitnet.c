@@ -385,6 +385,7 @@ nagi_llm_t *nagi_llm_bitnet_create(void)
     llm->config.mode = NAGI_LLM_MODE_EXTRACTION;
     llm->config.flash_attn = false;  /* BitNet works best without flash attention */
     llm->config.n_seq_max = 1; //8;
+    llm->backend = NAGI_LLM_BACKEND_BITNET;
 
     return llm;
 }

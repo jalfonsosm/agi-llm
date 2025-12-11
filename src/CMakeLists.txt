@@ -262,7 +262,7 @@ if(NAGI_LLM_ENABLE_LLAMACPP OR NAGI_LLM_ENABLE_BITNET OR NAGI_LLM_ENABLE_CLOUD_A
                 OUTPUT "${DEFAULT_MODEL_PATH}"
                 COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/models"
                 COMMAND ${CMAKE_COMMAND} -E echo "Downloading LLM model to ${DEFAULT_MODEL_PATH}..."
-                COMMAND curl -f -L --retry 3 -o "${DEFAULT_MODEL_PATH}" "${MODEL_URL}"
+                COMMAND curl -f -L --retry 3 --ssl-no-revoke -o "${DEFAULT_MODEL_PATH}" "${MODEL_URL}"
                 DEPENDS llama_cpp
                 COMMENT "Downloading LLM model..."
                 VERBATIM
@@ -299,70 +299,67 @@ endif()
 
 if(APPLE)
     target_link_libraries(nagi PRIVATE c++)
-else()
+elseif(NOT MSVC)
     target_link_libraries(nagi PRIVATE stdc++)
 endif()
 
 # Compile definitions (needed for strdup, strcasecmp on some systems)
 target_compile_definitions(nagi PRIVATE _DEFAULT_SOURCE)
 
-# Compiler warning flags - applied only to nagi, not to SDL3
-target_compile_options(nagi PRIVATE
-    # Basic flags
-    -fsigned-char
-    -fno-strict-aliasing
-    -fwrapv
-
-    # Warnings (common to GCC and Clang)
-    -Wall
-    -Wextra
-    -Wcast-align
-    -Wcast-qual
-    -Wconversion
-    -Wdouble-promotion
-    -Wformat=2
-    -Wmissing-declarations
-    -Wmissing-prototypes
-    -Wnull-dereference
-    -Wold-style-definition
-    -Wpointer-arith
-    -Wshadow
-    -Wshift-negative-value
-    -Wstrict-prototypes
-    -Wswitch-default
-    -Wundef
-    -Wuninitialized
-    -Wwrite-strings
-
-    # Errors for specific issues
-    -Werror=implicit-function-declaration
-    -Werror=return-type
-    -Werror=unused-result
-)
-
-# GCC-specific warnings
-if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+# Compiler warning flags
+if(MSVC)
+    target_compile_options(nagi PRIVATE /W3)
+else()
     target_compile_options(nagi PRIVATE
-        -Wduplicated-branches
-        -Wduplicated-cond
-        -Wformat-overflow=2
-        -Wformat-signedness
-        -Wformat-truncation=2
-        -Winit-self
-        -Wlogical-op
-        -Wshift-overflow=2
-        -Wstrict-overflow=2
+        -fsigned-char
+        -fno-strict-aliasing
+        -fwrapv
+        -Wall
+        -Wextra
+        -Wcast-align
+        -Wcast-qual
+        -Wconversion
+        -Wdouble-promotion
+        -Wformat=2
+        -Wmissing-declarations
+        -Wmissing-prototypes
+        -Wnull-dereference
+        -Wold-style-definition
+        -Wpointer-arith
+        -Wshadow
+        -Wshift-negative-value
+        -Wstrict-prototypes
+        -Wswitch-default
+        -Wundef
+        -Wuninitialized
+        -Wwrite-strings
+        -Werror=implicit-function-declaration
+        -Werror=return-type
+        -Werror=unused-result
     )
-endif()
-
-# Clang-specific warnings
-if(CMAKE_C_COMPILER_ID MATCHES "Clang")
-    target_compile_options(nagi PRIVATE
-        -Wconditional-uninitialized
-        -Wmissing-variable-declarations
-        -Wunreachable-code-break
-        -Wunreachable-code-return
-    )
+    
+    if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+        target_compile_options(nagi PRIVATE
+            -Wduplicated-branches
+            -Wduplicated-cond
+            -Wformat-overflow=2
+            -Wformat-signedness
+            -Wformat-truncation=2
+            -Winit-self
+            -Wlogical-op
+            -Wshift-overflow=2
+            -Wstrict-overflow=2
+        )
+    endif()
+    
+    if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+        target_compile_options(nagi PRIVATE
+            -Wconditional-uninitialized
+            -Wmissing-variable-declarations
+            -Wunreachable-code-break
+            -Wunreachable-code-return
+        )
+    endif()
 endif()
 
 set_target_properties(nagi PROPERTIES
@@ -372,9 +369,10 @@ set_target_properties(nagi PROPERTIES
 
 if (WIN32)
     target_sources(nagi PRIVATE nagi.rc)
-    set_target_properties(nagi PROPERTIES
-        WIN32_EXECUTABLE TRUE
-    )
+    # Don't set WIN32_EXECUTABLE - SDL3 handles the entry point
+    # set_target_properties(nagi PROPERTIES
+    #     WIN32_EXECUTABLE TRUE
+    # )
 endif()
 
 # Copy data files (fonts, config) to build directory

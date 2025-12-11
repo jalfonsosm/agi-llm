@@ -30,6 +30,11 @@ else()
     # Don't treat warnings as errors for SDL3_ttf
     set(SDL3TTF_WERROR OFF CACHE BOOL "" FORCE)
 
+    # Force static runtime library (/MT) for MSVC
+    if(MSVC)
+        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STRING "" FORCE)
+    endif()
+
     # Key: Point to SDL3's config directory
     # This allows SDL3_ttf's find_package(SDL3) to find our generated SDL3Config.cmake
     if(DEFINED SDL3_CONFIG_DIR)

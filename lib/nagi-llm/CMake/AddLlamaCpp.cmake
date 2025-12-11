@@ -7,8 +7,11 @@ if(NAGI_LLM_ENABLE_LLAMACPP)
     set(LLAMA_PREFIX ${CMAKE_BINARY_DIR}/_deps/llama)
 
     # Performance optimization flags
-    # Note: Using -fno-finite-math-only instead of -ffast-math because llama.cpp requires non-finite math
-    set(LLAMA_PERF_FLAGS "-O3 -march=native -fno-finite-math-only -funroll-loops")
+    if(MSVC)
+        set(LLAMA_PERF_FLAGS "/O2")
+    else()
+        set(LLAMA_PERF_FLAGS "-O3 -march=native -fno-finite-math-only -funroll-loops")
+    endif()
     
     set(LLAMA_CMAKE_FLAGS
         -DLLAMA_BUILD_SHARED=OFF
@@ -16,14 +19,30 @@ if(NAGI_LLM_ENABLE_LLAMACPP)
         -DBUILD_SHARED_LIBS=OFF
         -DLLAMA_ALL_WARNINGS=OFF
         -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-        # Enable native CPU optimizations (auto-detect AVX/AVX2/AVX512)
         -DLLAMA_NATIVE=ON
         -DLLAMA_ACCELERATE=ON
         -DLLAMA_FLASH_ATTN=ON
-        # Performance compiler flags
+        -DLLAMA_CURL=OFF
         -DCMAKE_C_FLAGS_RELEASE=${LLAMA_PERF_FLAGS}
         -DCMAKE_CXX_FLAGS_RELEASE=${LLAMA_PERF_FLAGS}
     )
+
+    # MSVC runtime library - match main project build type
+    if(MSVC)
+        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+            list(APPEND LLAMA_CMAKE_FLAGS 
+                -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDebug
+                "-DCMAKE_C_FLAGS_DEBUG=/MTd /Zi /Ob0 /Od /RTC1"
+                "-DCMAKE_CXX_FLAGS_DEBUG=/MTd /Zi /Ob0 /Od /RTC1"
+            )
+        else()
+            list(APPEND LLAMA_CMAKE_FLAGS 
+                -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+                "-DCMAKE_C_FLAGS_RELEASE=/MT /O2 /Ob2 /DNDEBUG"
+                "-DCMAKE_CXX_FLAGS_RELEASE=/MT /O2 /Ob2 /DNDEBUG"
+            )
+        endif()
+    endif()
 
     if(APPLE)
         if(NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
@@ -44,6 +63,17 @@ if(NAGI_LLM_ENABLE_LLAMACPP)
             -DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}
             -DCMAKE_OSX_ARCHITECTURES=arm64
         )
+    elseif(WIN32)
+        # Use Vulkan on Windows for NVIDIA GPUs
+        find_package(Vulkan REQUIRED)
+        list(APPEND LLAMA_CMAKE_FLAGS -DGGML_VULKAN=ON)
+        list(APPEND LLAMA_CMAKE_FLAGS -DGGML_CUDA=OFF)
+        list(APPEND LLAMA_CMAKE_FLAGS -DVulkan_INCLUDE_DIR=${Vulkan_INCLUDE_DIRS})
+        list(APPEND LLAMA_CMAKE_FLAGS -DVulkan_LIBRARY=${Vulkan_LIBRARIES})
+    elseif(UNIX)
+        # Use CUDA on Linux for NVIDIA GPUs
+        list(APPEND LLAMA_CMAKE_FLAGS -DGGML_CUDA=ON)
+        list(APPEND LLAMA_CMAKE_FLAGS -DGGML_VULKAN=OFF)
     endif()
         
     if(NOT DEFINED MODEL_NAME)
@@ -112,8 +142,8 @@ if(NAGI_LLM_ENABLE_LLAMACPP)
         GIT_TAG master
         PREFIX ${LLAMA_PREFIX}
         UPDATE_COMMAND ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> git submodule update --init --recursive
-        CONFIGURE_COMMAND ${CMAKE_COMMAND} -S <SOURCE_DIR> -B <BINARY_DIR> ${LLAMA_CMAKE_FLAGS}
-        BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR>
+        CMAKE_ARGS ${LLAMA_CMAKE_FLAGS}
+        BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --config ${CMAKE_BUILD_TYPE}
         INSTALL_COMMAND ""
     )
 
@@ -122,29 +152,93 @@ if(NAGI_LLM_ENABLE_LLAMACPP)
     set(LLAMA_BUILD_DIR ${LLAMA_PREFIX}/src/llama_cpp-build)
     set(LLAMA_INCLUDE_DIR ${LLAMA_PREFIX}/src/llama_cpp/include)
 
-    set(LLAMA_LIB ${LLAMA_BUILD_DIR}/src/libllama.a)
-    set(GGML_LIB ${LLAMA_BUILD_DIR}/ggml/src/libggml.a)
-    set(GGML_BASE_LIB ${LLAMA_BUILD_DIR}/ggml/src/libggml-base.a)
+    # Create imported targets for Ninja compatibility
+    # These tell CMake/Ninja that these files will exist after the ExternalProject builds
 
-    set(GGML_BACKEND_LIBS
-        ${LLAMA_BUILD_DIR}/ggml/src/ggml-blas/libggml-blas.a
-        ${LLAMA_BUILD_DIR}/ggml/src/libggml-cpu.a
-        ${LLAMA_BUILD_DIR}/ggml/src/ggml-metal/libggml-metal.a
-    )
+    if(WIN32)
+        # Ninja and NMake generators don't use subdirectories, Visual Studio does
+        if(CMAKE_GENERATOR MATCHES "Ninja|NMake")
+            set(LIB_SUBDIR "")
+        else()
+            set(LIB_SUBDIR ${CMAKE_BUILD_TYPE})
+        endif()
 
+        set(LLAMA_LIB ${LLAMA_BUILD_DIR}/src/${LIB_SUBDIR}/llama.lib)
+        set(GGML_LIB ${LLAMA_BUILD_DIR}/ggml/src/${LIB_SUBDIR}/ggml.lib)
+        set(GGML_BASE_LIB ${LLAMA_BUILD_DIR}/ggml/src/${LIB_SUBDIR}/ggml-base.lib)
+
+        # Base backend libs - always include CPU
+        set(GGML_BACKEND_LIBS ${LLAMA_BUILD_DIR}/ggml/src/${LIB_SUBDIR}/ggml-cpu.lib)
+
+        # Vulkan backend library is in a subdirectory
+        set(VULKAN_LIB ${LLAMA_BUILD_DIR}/ggml/src/ggml-vulkan/ggml-vulkan.lib)
+        list(APPEND GGML_BACKEND_LIBS ${VULKAN_LIB})
+        message(STATUS "Vulkan backend enabled for GPU acceleration")
+    else()
+        set(LLAMA_LIB ${LLAMA_BUILD_DIR}/src/libllama.a)
+        set(GGML_LIB ${LLAMA_BUILD_DIR}/ggml/src/libggml.a)
+        set(GGML_BASE_LIB ${LLAMA_BUILD_DIR}/ggml/src/libggml-base.a)
+
+        # Base backend libs
+        set(GGML_BACKEND_LIBS ${LLAMA_BUILD_DIR}/ggml/src/libggml-cpu.a)
+
+        # Add CUDA if available on Linux
+        set(CUDA_LIB ${LLAMA_BUILD_DIR}/ggml/src/libggml-cuda.a)
+        if(EXISTS ${CUDA_LIB})
+            list(APPEND GGML_BACKEND_LIBS ${CUDA_LIB})
+            message(STATUS "CUDA backend found: ${CUDA_LIB}")
+        endif()
+
+        # Add Metal on macOS (handled separately above)
+        if(APPLE)
+            set(METAL_LIB ${LLAMA_BUILD_DIR}/ggml/src/ggml-metal/libggml-metal.a)
+            if(EXISTS ${METAL_LIB})
+                list(APPEND GGML_BACKEND_LIBS ${METAL_LIB})
+            endif()
+        endif()
+    endif()
+
+    # Build library list in correct dependency order
+    # Order matters: llama -> ggml -> backends -> ggml-base
     set(NAGI_LL_LIBS
         ${LLAMA_LIB}
         ${GGML_LIB}
-        ${GGML_BASE_LIB}
     )
 
-    list(APPEND NAGI_LL_LIBS ${GGML_BACKEND_LIBS})
+    # Add backend libs
+    # Note: Using raw paths because ExternalProject doesn't provide importable targets
+    foreach(backend_lib ${GGML_BACKEND_LIBS})
+        list(APPEND NAGI_LL_LIBS ${backend_lib})
+    endforeach()
 
-    # Add Apple frameworks to llama.cpp libraries
+    # Add ggml-base LAST (it depends on backends)
+    list(APPEND NAGI_LL_LIBS ${GGML_BASE_LIB})
+
+    # On Windows with MSVC, we need to link backends twice to resolve circular dependencies
+    if(WIN32 AND MSVC)
+        foreach(backend_lib ${GGML_BACKEND_LIBS})
+            list(APPEND NAGI_LL_LIBS ${backend_lib})
+        endforeach()
+    endif()
+
+    # Add platform-specific libraries
     if(APPLE)
         list(APPEND NAGI_LL_LIBS "-framework Accelerate")
         list(APPEND NAGI_LL_LIBS "-framework Metal" "-framework MetalPerformanceShaders")
+    elseif(WIN32)
+        # Add Vulkan library if Vulkan is enabled
+        find_package(Vulkan QUIET)
+        if(Vulkan_FOUND)
+            list(APPEND NAGI_LL_LIBS ${Vulkan_LIBRARIES})
+            message(STATUS "Vulkan library found: ${Vulkan_LIBRARIES}")
+            # Add Windows system libraries required by Vulkan
+            list(APPEND NAGI_LL_LIBS "winmm.lib" "ws2_32.lib")
+        else()
+            message(WARNING "Vulkan SDK not found. Install Vulkan SDK from https://vulkan.lunarg.com/")
+        endif()
     endif()
+
+    # Windows system libraries are handled by find_package(Vulkan)
 
     # Export variables to parent scope
     set(LLAMA_SOURCE_DIR ${LLAMA_SOURCE_DIR} PARENT_SCOPE)

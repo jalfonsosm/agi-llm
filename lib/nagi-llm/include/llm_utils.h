@@ -24,7 +24,6 @@
 #endif
 
 #ifndef END_OF_ASSISTANT
-
 #define END_OF_ASSISTANT "<end_of_assistant>\\n"
 #endif
 

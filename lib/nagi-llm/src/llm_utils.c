@@ -49,7 +49,7 @@ const char *get_word_string(nagi_llm_t *llm, int word_id)
         u16 offset = load_be_16(state->dictionary_data + i * 2);
         if (offset == 0) continue;
 
-        u8 *ptr = state->dictionary_data + offset;
+        const u8 *ptr = state->dictionary_data + offset;
         buffer[0] = '\0';
 
         int words_in_section = 0;
@@ -139,7 +139,7 @@ const char *extract_game_verbs(nagi_llm_t *llm)
         u16 offset = load_be_16(state->dictionary_data + i * 2);
         if (offset == 0) continue;
 
-        u8 *ptr = state->dictionary_data + offset;
+        const u8 *ptr = state->dictionary_data + offset;
         char buffer[64];
         buffer[0] = '\0';
 
@@ -196,5 +196,3 @@ const char *extract_game_verbs(nagi_llm_t *llm)
 
     return verb_list;
 }
-
-

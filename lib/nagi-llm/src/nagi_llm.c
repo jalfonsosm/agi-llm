@@ -70,12 +70,6 @@ nagi_llm_t *nagi_llm_create(nagi_llm_backend_t backend)
             return NULL;
     }
 
-    if (llm) {
-        llm->backend = backend;
-    }
-
-    //nagi_llm_init(llm, NULL, NULL);
-
     return llm;
 }
 
@@ -117,7 +111,7 @@ void nagi_llm_shutdown(nagi_llm_t *llm) {
 /*
  * Check if LLM is initialized and ready
  */
-inline int nagi_llm_ready(nagi_llm_t *llm) {
+int nagi_llm_ready(nagi_llm_t *llm) {
     llm_state_t *state = llm->state;
     return state && state->initialized;
 }

@@ -408,7 +408,7 @@ static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response
     if (start != output) {
         memmove(output, start, strlen(start) + 1);
     }
-    response_len = strlen(output);
+    response_len = (int)strlen(output);
 
     if (llm->config.verbose && response_len > 0) {
         printf("Generated: \"%s\"\n", output);
@@ -485,7 +485,7 @@ static int llamacpp_init(nagi_llm_t *llm, const char *model_path, const nagi_llm
     model_params.use_mlock = false;
 
     printf("LLM Parser: Loading model from %s...\n", llm->config.model_path);
-    state->model = llama_load_model_from_file(llm->config.model_path, model_params);
+    state->model = llama_model_load_from_file(llm->config.model_path, model_params);
     if (!state->model) {
         set_error(state, "Failed to load model: %s", llm->config.model_path);
         fprintf(stderr, "LLM Parser: %s\n", state->last_error);
@@ -504,11 +504,11 @@ static int llamacpp_init(nagi_llm_t *llm, const char *model_path, const nagi_llm
     ctx_params.n_threads_batch = llm->config.n_threads;
     ctx_params.n_seq_max = llm->config.n_seq_max;
 
-    state->ctx = llama_new_context_with_model(state->model, ctx_params);
+    state->ctx = llama_init_from_model(state->model, ctx_params);
     if (!state->ctx) {
         set_error(state, "Failed to create context");
         fprintf(stderr, "LLM Parser: %s\n", state->last_error);
-        llama_free_model(state->model);
+        llama_model_free(state->model);
         free(state);
         llm->state = NULL;
         return 0;
@@ -573,7 +573,7 @@ static void llamacpp_shutdown(nagi_llm_t *llm)
         llama_free(state->ctx);
     }
     if (state->model) {
-        llama_free_model(state->model);
+        llama_model_free(state->model);
     }
 
     llama_backend_free();
@@ -770,6 +770,7 @@ nagi_llm_t *nagi_llm_llamacpp_create(void)
     llm->matches_expected = llamacpp_matches_expected;
     llm->generate_response = llamacpp_generate_response;
     llm->state = NULL; 
+    llm->backend = NAGI_LLM_BACKEND_LLAMACPP;
 
     return llm;
 }

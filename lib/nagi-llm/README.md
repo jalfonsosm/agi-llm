@@ -29,6 +29,7 @@ High-performance local inference using llama.cpp with full GPU acceleration.
 
 **Features:**
 - Metal GPU acceleration on macOS
+- Cuda GPU acceleration on windows
 - GGUF model support
 - Advanced KV cache management
 - Multiple model support (Llama 3.2, Qwen 2.5, etc.)
@@ -60,12 +61,6 @@ Ultra-efficient 1.58-bit quantized models using Microsoft's BitNet.cpp.
 OpenAI-compatible API support for cloud LLM services.
 
 **Status:** Prototype - basic functionality working
-
-**Supported Services:**
-- Cerebras (free tier available)
-- Groq (free tier available)
-- OpenAI
-- Local Ollama
 
 **Enable:** `-DNAGI_LLM_ENABLE_CLOUD_API=ON`
 
@@ -160,7 +155,7 @@ Small models (3B-8B params) can produce incoherent responses with high temperatu
 ### Prerequisites
 - CMake 3.14+
 - C11 compiler
-- SDL3 (fetched automatically)
+- SDL3
 - CURL (for cloud backend)
 
 ### Build Commands

@@ -1,6 +1,7 @@
 # AGI-Llama: AI-Enhanced Adventure Game Interpreter
 
 **A Modern Fork of NAGI with LLM Integration**
+**WELCOME TO THE RETRO FUTURE!!!**
 
 *Original NAGI by Nick Sonneveld | LLM Integration by Juan Alfonso Sierra*
 
@@ -30,7 +31,7 @@ With extensive modernization including SDL3 support, Unicode text rendering (SDL
 - **Unicode Text Rendering**: SDL_ttf integration for multilingual display
 - **LLM Integration**: Experimental AI-powered natural language processing
 - **Multi-backend**: Support for llama.cpp, BitNet, and Cloud APIs
-- **Modular Architecture**: Clean separation between game engine and AI layer
+- **Modular Architecture**: Clean separation between game engine and AI layer. The llm code is encapsulated in its own lib and could be easily integrated in other projects like SCUMMVM or Sarien.
 
 ## Current Developers
 
@@ -38,7 +39,7 @@ With extensive modernization including SDL3 support, Unicode text rendering (SDL
   * [Gareth McMullin][2] - Linux port
   * [Claudio Matsuoka][3] - Project support
   * [Ritchie Swann][4] - OS X port, SDL2 upgrade
-  * Juan Alfonso Sierra - LLM integration experiment
+  * [Juan Alfonso Sierra][5] - SDL3 and SDL_TTF port, LLM integration
 
 ## LLM Features (Experimental)
 
@@ -55,7 +56,7 @@ With extensive modernization including SDL3 support, Unicode text rendering (SDL
 
 3. **Cloud API** 🚧 - Prototype (WIP)
    - OpenAI-compatible endpoints
-   - Supports: Cerebras, Groq, OpenAI, local Ollama
+   - Supports: Hugging Face, Groq, OpenAI, local Ollama...
 
 ### Known Limitations
 
@@ -80,6 +81,10 @@ With extensive modernization including SDL3 support, Unicode text rendering (SDL
 - [ ] Better context management using game state
 - [ ] Larger/better models support
 - [ ] Better prompt engineering
+
+## New scripts commands (WIP)
+
+- Added new **update.context** command to to be able to send additional context to the LLM. This require edit and reexport the original game with a custom version of the AgiStudio tool that I am working on.
 
 ## Build Requirements
 
@@ -141,15 +146,27 @@ cmake .. -DMODEL_NAME=PHI3
 ### Cloud API Setup
 
 1. Copy config: `cp cloud_config_example.ini cloud_config.ini`
-2. Get free API key from [Cerebras](https://console.cerebras.ai)
-3. Edit `cloud_config.ini` with your key
+2. Get free API key from  [Hugging Face](https://huggingface.co/settings/tokens), [Cerebras](https://console.cerebras.ai), [Groq](https://console.groq.com)...
+3. Edit `cloud_config.ini` with your key and the proper endpoint
 4. Build with cloud backend enabled
+
+## How to Run
+
+After building, you need AGI game files to play:
+
+```bash
+# Linux/macOS
+./run.sh /path/to/game/directory
+
+# Windows
+run.bat C:\path\to\game\directory
+```
 
 ## Systems Supported
 
-- **macOS** (Apple Silicon & Intel)
-- **Linux** (x86_64, ARM64)
-- **Windows** (experimental)
+- **macOS** (Metal)
+- **Linux** (Vulkan)
+- **Windows** (Vulkan)
 
 ## License
 
@@ -180,15 +197,11 @@ NAGI's source is released under the X11 license (compatible with GPL).
 ### AI-Assisted Development
 
 This LLM integration was developed with assistance from AI coding tools:
-- Amazon Q Developer
 - Claude (Anthropic)
+- Amazon Q Developer
 - DeepSeek
 - GitHub Copilot
 - Gemini AI (Google)
-
-### Credits
-
-- **Juan Alfonso Sierra** - LLM integration, architecture, and experimentation
 
 ---
 
@@ -198,3 +211,4 @@ This LLM integration was developed with assistance from AI coding tools:
 [2]: mailto:g_mcm.at.mweb.co.za
 [3]: mailto:claudio.at.helllabs.org
 [4]: mailto:ritchieswann@gmail.com
+[5]: mailto:jalfonsosm@yahoo.es

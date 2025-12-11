@@ -1,4 +1,15 @@
 {
     "editor.tabSize": 8,
-    "editor.insertSpaces": true
+    "editor.insertSpaces": true,
+    "terminal.integrated.profiles.windows": {
+    "Developer Command Prompt": {
+      "path": "cmd.exe",
+      "args": [
+        "/k",
+        "C:\\Program Files (x86)\\Microsoft Visual Studio\\18\\BuildTools\\VC\\Auxiliary\\Build\\vcvars64.bat"
+      ],
+      "icon": "tools"
+    }
+  },
+  "terminal.integrated.defaultProfile.windows": "Developer Command Prompt"
 }

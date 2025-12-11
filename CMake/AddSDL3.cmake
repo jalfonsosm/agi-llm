@@ -2,20 +2,10 @@
 
 include(FetchContent)
 
-# First try to find SDL3 installed on the system
-find_package(SDL3 QUIET CONFIG)
-
-# Check if SDL3 was found AND provides usable targets
+# IMPORTANT: Always build SDL3 from source to ensure runtime library compatibility
+# System-installed SDL3 may use different runtime library (/MD vs /MT)
 set(SDL3_USABLE FALSE)
-if(SDL3_FOUND)
-    # Verify that at least one usable target exists
-    if(TARGET SDL3::SDL3-static OR TARGET SDL3-static OR TARGET SDL3::SDL3-shared OR TARGET SDL3::SDL3 OR TARGET SDL3)
-        set(SDL3_USABLE TRUE)
-        message(STATUS "Found system SDL3 with usable targets")
-    else()
-        message(STATUS "Found system SDL3 but no usable targets - will build from source")
-    endif()
-endif()
+message(STATUS "Building SDL3 from source to ensure runtime library compatibility...")
 
 if(NOT SDL3_USABLE)
     message(STATUS "SDL3 not found on system or not usable - fetching and building from source...")
@@ -36,6 +26,23 @@ if(NOT SDL3_USABLE)
     set(SDL_TESTS OFF CACHE BOOL "" FORCE)
     # Enable install to generate proper CMake config files for find_package
     set(SDL_INSTALL ON CACHE BOOL "" FORCE)
+
+    # Force static runtime library (/MT) for MSVC
+    if(MSVC)
+        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STRING "" FORCE)
+        
+        # Ensure static runtime by replacing /MD with /MT in default flags
+        set(CompilerFlagVars
+            CMAKE_C_FLAGS CMAKE_C_FLAGS_DEBUG CMAKE_C_FLAGS_RELEASE CMAKE_C_FLAGS_MINSIZEREL CMAKE_C_FLAGS_RELWITHDEBINFO
+            CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE CMAKE_CXX_FLAGS_MINSIZEREL CMAKE_CXX_FLAGS_RELWITHDEBINFO
+        )
+        foreach(FLAG_VAR ${CompilerFlagVars})
+            if(${FLAG_VAR} MATCHES "/MD")
+                string(REPLACE "/MD" "/MT" ${FLAG_VAR} "${${FLAG_VAR}}")
+                set(${FLAG_VAR} "${${FLAG_VAR}}" CACHE STRING "" FORCE)
+            endif()
+        endforeach()
+    endif()
 
     # Disable subsystems we don't need to speed up build
     set(SDL_SENSOR OFF CACHE BOOL "" FORCE)
@@ -64,6 +71,19 @@ if(NOT SDL3_USABLE)
     endif()
 
     FetchContent_MakeAvailable(SDL3)
+
+    if(MSVC)
+        # Force static runtime on the fetched targets
+        if(TARGET SDL3-static)
+            set_property(TARGET SDL3-static PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        if(TARGET SDL3)
+             set_property(TARGET SDL3 PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        if(TARGET SDL3_test)
+            set_property(TARGET SDL3_test PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+    endif()
 
     # Create a simple SDL3Config.cmake that exposes the targets
     # This allows SDL3_ttf to find SDL3 via find_package()

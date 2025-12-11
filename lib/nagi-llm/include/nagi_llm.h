@@ -33,7 +33,6 @@ typedef unsigned int u32;
 #define NAGI_LLM_DEFAULT_U_BATCH_SIZE 512
 #define NAGI_LLM_DEFAULT_THREADS 4
 
-
 /*
  * LLM operation modes
  */
@@ -57,10 +56,10 @@ typedef enum {
  * LLM configuration structure
  */
 typedef struct {
-    nagi_llm_backend_t backend;         /* Backend type */
-    char model_path[NAGI_LLM_MAX_MODEL_PATH];  /* Path to model file (for local backends) */
-    char api_key[256];                  /* API key (for cloud backends) */
-    char api_endpoint[512];             /* API endpoint URL (for cloud backends) */
+    nagi_llm_backend_t backend;                 /* Backend type */
+    char model_path[NAGI_LLM_MAX_MODEL_PATH];   /* Path to model file (for local backends) */
+    char api_key[256];                          /* API key (for cloud backends) */
+    char api_endpoint[512];                     /* API endpoint URL (for cloud backends) */
     int context_size;
     int batch_size;
     int u_batch_size;
@@ -69,10 +68,9 @@ typedef struct {
     float top_p;
     int top_k;
     int max_tokens;
-    int use_gpu;                        /* 1 to use GPU acceleration (for local backends) */
-    int verbose;                        /* 1 for verbose output */
-    nagi_llm_mode_t mode;               /* LLM operation mode */
-    // void *impl_data;                 /* Backend-specific data */
+    int use_gpu;                                /* 1 to use GPU acceleration (for local backends) */
+    int verbose;                                /* 1 for verbose output */
+    nagi_llm_mode_t mode;                       /* LLM operation mode */
     int flash_attn;
     int n_seq_max;
 
@@ -80,7 +78,6 @@ typedef struct {
 
 /* backend state */
 typedef struct llm_state {
-    /* For real LLM backend */
     struct llama_model *model;
     struct llama_context *ctx;
     struct llama_sampler *sampler;           /* For extraction/semantic (deterministic) */

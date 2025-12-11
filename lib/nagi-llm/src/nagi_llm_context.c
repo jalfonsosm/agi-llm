@@ -8,13 +8,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
-
-#include "../include/nagi_llm_context.h"
 #include <stdint.h>
 #include <stddef.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdarg.h>
+
+#include "../include/nagi_llm_context.h"
+
+/* MSVC uses strtok_s instead of strtok_r */
+#ifdef _MSC_VER
+#define strtok_r(str, delim, saveptr) strtok_s(str, delim, saveptr)
+#endif
 
 /* Global context instance */
 llm_context_t g_llm_context = {0};
@@ -173,15 +175,6 @@ void llm_context_track_flag(int flag_num, const char *description)
     g_llm_context.tracked_flags[idx].flag_num = flag_num;
     g_llm_context.tracked_flags[idx].description = description;
     g_llm_context.tracked_flags[idx].value = 0;
-}
-
-/*
- * Update all tracked flags
- */
-void llm_context_update_flags(void)
-{
-    /* This function is now deprecated - game engine should call llm_context_on_flag_change() instead */
-    g_llm_context.context_dirty = 1;
 }
 
 /*

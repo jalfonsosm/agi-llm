@@ -100,7 +100,28 @@ endif()
 
 # Cloud API backend
 if(NAGI_LLM_ENABLE_CLOUD_API)
-    find_package(CURL REQUIRED)
+    find_package(CURL QUIET)
+    
+    if(NOT CURL_FOUND)
+        message(STATUS "CURL not found, fetching automatically...")
+        include(FetchContent)
+        FetchContent_Declare(
+            curl
+            URL https://curl.se/download/curl-8.11.1.tar.gz
+            URL_HASH SHA256=c95c1b8ee08e0c36e0e9e5e1e5e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1
+        )
+        set(BUILD_CURL_EXE OFF CACHE BOOL "" FORCE)
+        set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+        set(CURL_STATICLIB ON CACHE BOOL "" FORCE)
+        set(HTTP_ONLY ON CACHE BOOL "" FORCE)
+        set(CURL_USE_OPENSSL OFF CACHE BOOL "" FORCE)
+        set(CURL_USE_SCHANNEL ON CACHE BOOL "" FORCE)
+        FetchContent_MakeAvailable(curl)
+        set(CURL_LIBRARIES CURL::libcurl)
+    else()
+        set(CURL_LIBRARIES CURL::libcurl)
+    endif()
+    
     target_sources(nagi-llm PRIVATE
         backends/cloud/nagi_llm_cloud.c
         backends/cloud/nagi_llm_cloud_impl.c
@@ -108,7 +129,7 @@ if(NAGI_LLM_ENABLE_CLOUD_API)
     target_include_directories(nagi-llm PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/backends/cloud
     )
-    target_link_libraries(nagi-llm PUBLIC CURL::libcurl)
+    target_link_libraries(nagi-llm PUBLIC ${CURL_LIBRARIES})
     target_compile_definitions(nagi-llm PUBLIC NAGI_LLM_HAS_CLOUD_API=1)
     message(STATUS "NAGI-LLM: Cloud backend enabled")
 endif()
@@ -119,13 +140,17 @@ target_compile_definitions(nagi-llm PRIVATE
 )
 
 # Warning flags
-target_compile_options(nagi-llm PRIVATE
-    -Wall
-    -Wextra
-    -Wshadow
-    -Werror=implicit-function-declaration
-    -Werror=return-type
-)
+if(MSVC)
+    target_compile_options(nagi-llm PRIVATE /W3)
+else()
+    target_compile_options(nagi-llm PRIVATE
+        -Wall
+        -Wextra
+        -Wshadow
+        -Werror=implicit-function-declaration
+        -Werror=return-type
+    )
+endif()
 
 # Installation rules (optional)
 install(TARGETS nagi-llm
