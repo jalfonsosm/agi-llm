@@ -19,6 +19,7 @@ bin/x64
 out
 CMakeSettings.json
 
+llm_config.ini
 build
 games
 
@@ -29,5 +30,3 @@ __pycache__/
 *.pyc
 .Python
 cloud_config.ini
-
-.claude

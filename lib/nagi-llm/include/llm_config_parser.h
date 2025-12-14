@@ -18,7 +18,6 @@ extern "C" {
  * Load unified configuration from llm_config.ini
  *
  * Reads common settings and backend-specific settings.
- * Falls back to cloud_config.ini for backward compatibility if llm_config.ini not found.
  *
  * @param config: Configuration structure to populate
  * @param backend: Backend type (to know which section to read)

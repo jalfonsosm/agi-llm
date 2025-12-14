@@ -118,23 +118,30 @@ int nagi_llm_load_config(nagi_llm_config_t *config,
     
     if (!config) return 0;
 
+    /* Initialize config with defaults */
+    memset(config, 0, sizeof(nagi_llm_config_t));
+    config->temperature = 0.0f;
+    config->temperature_creative_base = 0.3f;
+    config->temperature_creative_offset = 0.2f;
+    config->max_tokens = 512;
+    config->verbose = 0;
+    config->context_size = 4096;
+    config->batch_size = 1024;
+    config->u_batch_size = 512;
+    config->n_threads = 4;
+    config->top_p = 0.9f;
+    config->top_k = 40;
+    config->use_gpu = 1;
+    config->flash_attn = 0;
+    config->n_seq_max = 1;
+
     /* Use default filename if not specified */
     filename = config_file ? config_file : "llm_config.ini";
 
     f = fopen(filename, "r");
     if (!f) {
-        /* Try fallback to cloud_config.ini for backward compatibility */
-        if (backend == NAGI_LLM_BACKEND_CLOUD) {
-            f = fopen("cloud_config.ini", "r");
-            if (!f) {
-                fprintf(stderr, "LLM Config: Could not open %s or cloud_config.ini\n", filename);
-                return 0;
-            }
-            fprintf(stderr, "LLM Config: Using deprecated cloud_config.ini (consider migrating to llm_config.ini)\n");
-        } else {
-            fprintf(stderr, "LLM Config: Could not open %s\n", filename);
-            return 0;
-        }
+        fprintf(stderr, "LLM Config: Could not open %s\n", filename);
+        return 0;
     }
 
     /* Determine which sections to read based on backend */

@@ -392,11 +392,15 @@ add_custom_command(TARGET nagi POST_BUILD
     COMMENT "Copying NAGI data files to build directory"
 )
 
-if(NAGI_LLM_ENABLE_CLOUD_API)
-    add_custom_command(TARGET nagi POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_SOURCE_DIR}/cloud_config.ini
-            ${CMAKE_BINARY_DIR}/cloud_config.ini
-        COMMENT "Copying cloud_config.ini to build directory"
-    )
+if(NAGI_LLM_ENABLE_LLAMACPP OR NAGI_LLM_ENABLE_BITNET OR NAGI_LLM_ENABLE_CLOUD_API)
+    if(EXISTS "${CMAKE_SOURCE_DIR}/llm_config.ini")
+        add_custom_command(TARGET nagi POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${CMAKE_SOURCE_DIR}/llm_config.ini
+                ${CMAKE_BINARY_DIR}/llm_config.ini
+            COMMENT "Copying llm_config.ini to build directory"
+        )
+    else()
+        message(STATUS "llm_config.ini not found; copy llm_config_example.ini to create it")
+    endif()
 endif()

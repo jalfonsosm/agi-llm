@@ -72,6 +72,17 @@ static const char *LANGUAGE_DETECTION_PROMPT =
     START_OF_USER
     "%s" END_OF_USER START_OF_ASSISTANT;
 
+/* Cloud-specific language detection prompt (no special markers) */
+static const char *LANGUAGE_DETECTION_PROMPT_CLOUD =
+    "Detect the language of this text and respond with only the language name:\n\n"
+    "Examples:\n"
+    "look tree -> English\n"
+    "mira arbol -> Spanish\n"
+    "regarde arbre -> French\n"
+    "schaue baum -> German\n\n"
+    "Text: %s\n"
+    "Language:";
+
 /* Response generation with explicit language */
 static const char *RESPONSE_GENERATION_PROMPT =
     START_OF_SYSTEM

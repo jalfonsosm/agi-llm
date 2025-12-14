@@ -131,7 +131,16 @@ if(NAGI_LLM_ENABLE_CLOUD_API)
         ${CMAKE_CURRENT_SOURCE_DIR}/backends/cloud
     )
     target_link_libraries(nagi-llm PUBLIC ${CURL_LIBRARIES})
-    target_compile_definitions(nagi-llm PUBLIC NAGI_LLM_HAS_CLOUD_API=1)
+    target_compile_definitions(nagi-llm PUBLIC 
+        NAGI_LLM_HAS_CLOUD_API=1
+        # Empty chat markers for cloud APIs (no special formatting needed)
+        START_OF_SYSTEM=""
+        END_OF_SYSTEM=""
+        START_OF_USER=""
+        END_OF_USER=""
+        START_OF_ASSISTANT=""
+        END_OF_ASSISTANT=""
+    )
     message(STATUS "NAGI-LLM: Cloud backend enabled")
 endif()
 

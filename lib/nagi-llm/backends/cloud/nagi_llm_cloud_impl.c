@@ -11,16 +11,13 @@ static int cloud_matches_expected(nagi_llm_t *llm, const char *input,
                                    const int *expected_word_ids, int expected_count);
 static int cloud_generate_response(nagi_llm_t *llm, const char *game_response,
                                     const char *user_input, char *output, int output_size);
+static const char *cloud_detect_language(nagi_llm_t *llm, const char *input);
 
 static int cloud_init(nagi_llm_t *llm, const char *model_path, const nagi_llm_config_t *config) {
     (void)model_path;
     /* Override with passed config if provided */
     if (config) {
-        llm->config.temperature = config->temperature;
-        llm->config.temperature_creative_base = config->temperature_creative_base;
-        llm->config.temperature_creative_offset = config->temperature_creative_offset;
-        llm->config.max_tokens = config->max_tokens;
-        llm->config.verbose = config->verbose;
+        llm->config = *config;  /* Copy entire config structure */
     }
     
     if (!llm->state) {
@@ -52,6 +49,7 @@ static int cloud_init(nagi_llm_t *llm, const char *model_path, const nagi_llm_co
         const char *api_key = getenv("OPENAI_API_KEY");
         if (api_key && api_key[0]) {
             strncpy(cloud_config.api_key, api_key, sizeof(cloud_config.api_key) - 1);
+            cloud_config.api_key[sizeof(cloud_config.api_key) - 1] = '\0';
         }
     }
     
@@ -159,34 +157,68 @@ static int cloud_matches_expected(nagi_llm_t *llm, const char *input,
     return (strstr(response, "yes") != NULL);
 }
 
+static const char *cloud_detect_language(nagi_llm_t *llm, const char *input) {
+    llm_state_t *state = llm->state;
+    static char detected[64];
+    char prompt[512];
+    const char *fallback = "English";
+
+    if (!llm || !state || !nagi_llm_ready(llm)) {
+        return fallback;
+    }
+
+    if (!input || input[0] == '\0') {
+        return state->detected_language[0] ? state->detected_language : fallback;
+    }
+
+    snprintf(prompt, sizeof(prompt), LANGUAGE_DETECTION_PROMPT_CLOUD, input);
+    int len = nagi_llm_cloud_generate(llm, prompt, detected, sizeof(detected));
+
+    if (len <= 0) {
+        return state->detected_language[0] ? state->detected_language : fallback;
+    }
+
+    /* Trim whitespace and extract language name */
+    char *p = detected;
+    while (*p == ' ' || *p == '\n' || *p == '\r' || *p == '\t') p++;
+    
+    char *end = p + strlen(p);
+    while (end > p) {
+        end--;
+        if (*end == ' ' || *end == '\n' || *end == '\r' || *end == '\t' || *end == '.') {
+            *end = '\0';
+        } else {
+            break;
+        }
+    }
+    
+    /* Find known language in response */
+    const char *languages[] = {"Spanish", "English", "French", "German", "Italian", 
+                              "Portuguese", "Russian", "Japanese", "Chinese", NULL};
+    
+    const char *lang = fallback;
+    for (int i = 0; languages[i]; i++) {
+        if (strstr(p, languages[i])) {
+            lang = languages[i];
+            break;
+        }
+    }
+
+    strncpy(state->detected_language, lang, sizeof(state->detected_language) - 1);
+    state->detected_language[sizeof(state->detected_language) - 1] = '\0';
+
+    if (llm->config.verbose) {
+        printf("Cloud: Language detected: '%s' from input: '%s'\n",
+               state->detected_language, input);
+    }
+
+    return state->detected_language[0] ? state->detected_language : fallback;
+}
+
 static int cloud_generate_response(nagi_llm_t *llm, const char *game_response,
                                     const char *user_input, char *output, int output_size) {
     char prompt[4096];
-    char lang_prompt[512];
-    char detected[64];
-    llm_state_t *state = llm->state;
-    const char *language = "English";
-    
-    /* Detect language from user input using API */
-    if (user_input && user_input[0] != '\0') {
-        snprintf(lang_prompt, sizeof(lang_prompt), LANGUAGE_DETECTION_PROMPT, user_input);
-        int len = nagi_llm_cloud_generate(llm, lang_prompt, detected, sizeof(detected));
-        
-        if (len > 0) {
-            /* Trim whitespace */
-            char *p = detected;
-            while (*p == ' ' || *p == '\n') p++;
-            char *end = p + strlen(p) - 1;
-            while (end > p && (*end == ' ' || *end == '\n' || *end == '.')) *end-- = '\0';
-            
-            if (strlen(p) > 2 && strlen(p) < 32) {
-                language = p;
-                if (state) strcpy(state->detected_language, p);
-            }
-        }
-    } else if (state && state->detected_language[0]) {
-        language = state->detected_language;
-    }
+    const char *language = cloud_detect_language(llm, user_input);
 
     if (llm->config.verbose) {
         printf("Cloud: Generating response in %s\n", language);
