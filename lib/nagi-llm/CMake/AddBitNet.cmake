@@ -28,7 +28,7 @@ if(NAGI_LLM_ENABLE_BITNET)
     # === APPLE SILICON FIX: Disable problematic LLVM optimization ===
     if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
         # Use -O2 for both Debug and Release to avoid LLVM bug
-        set(BITNET_OPT_FLAGS "-O2 -mllvm -disable-interleaved-load-combine -march=native -mtune=native -ffast-math")
+        set(BITNET_OPT_FLAGS "-O2")
         message(STATUS "BitNet: Apple Silicon detected, applying LLVM workaround")
         message(STATUS "BitNet: Using ${BITNET_OPT_FLAGS} to prevent compilation hangs")
     else()

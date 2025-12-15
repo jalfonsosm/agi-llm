@@ -45,7 +45,7 @@ With extensive modernization including SDL3 support, Unicode text rendering (SDL
 
 ### Supported Backends
 
-1. **llama.cpp** ✅ - Local inference
+1. **llama.cpp** ✅
    - GGUF models with GPU acceleration
    - Models: Llama 3.2 3B, Qwen 2.5 7B, Gemma 3 4B
    - Requires model download (2-5GB)
@@ -54,7 +54,7 @@ With extensive modernization including SDL3 support, Unicode text rendering (SDL
    - 1.58-bit quantized models
    - Needs optimization
 
-3. **Cloud API** 🚧 - Experimental
+3. **Cloud API** ✅
    - OpenAI-compatible endpoints
    - Supports: Hugging Face, Groq, Cerebras, OpenAI, Ollama...
    - No local setup required, just API key

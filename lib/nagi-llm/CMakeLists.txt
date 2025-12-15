@@ -101,27 +101,8 @@ endif()
 
 # Cloud API backend
 if(NAGI_LLM_ENABLE_CLOUD_API)
-    find_package(CURL QUIET)
-    
-    if(NOT CURL_FOUND)
-        message(STATUS "CURL not found, fetching automatically...")
-        include(FetchContent)
-        FetchContent_Declare(
-            curl
-            URL https://curl.se/download/curl-8.11.1.tar.gz
-            URL_HASH SHA256=c95c1b8ee08e0c36e0e9e5e1e5e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1
-        )
-        set(BUILD_CURL_EXE OFF CACHE BOOL "" FORCE)
-        set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-        set(CURL_STATICLIB ON CACHE BOOL "" FORCE)
-        set(HTTP_ONLY ON CACHE BOOL "" FORCE)
-        set(CURL_USE_OPENSSL OFF CACHE BOOL "" FORCE)
-        set(CURL_USE_SCHANNEL ON CACHE BOOL "" FORCE)
-        FetchContent_MakeAvailable(curl)
-        set(CURL_LIBRARIES CURL::libcurl)
-    else()
-        set(CURL_LIBRARIES CURL::libcurl)
-    endif()
+    find_package(CURL REQUIRED)
+    set(CURL_LIBRARIES CURL::libcurl)
     
     target_sources(nagi-llm PRIVATE
         backends/cloud/nagi_llm_cloud.c

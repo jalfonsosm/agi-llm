@@ -192,7 +192,8 @@ static const char *bitnet_extract_words(nagi_llm_t *llm, const char *input)
     }
 
     llm_state_t *state = llm->state;
-    current_seq = (state->seq_counter++) % 8;
+    int seq_capacity = llm->config.n_seq_max > 0 ? llm->config.n_seq_max : 1;
+    current_seq = (state->seq_counter++) % seq_capacity;
 
     if (llm->config.verbose) {
         printf("\n=== BitNet Extraction ===\n");
@@ -206,16 +207,16 @@ static const char *bitnet_extract_words(nagi_llm_t *llm, const char *input)
     /* Tokenize prompt */
     n_tokens = llama_n_ctx(state->ctx);
     tokens = (llama_token *)malloc(n_tokens * sizeof(llama_token));
-    n_prompt_tokens = llama_tokenize(state->model,
+    n_prompt_tokens = LLAMA_TOKENIZE(state->model,
                                      prompt, (int)strlen(prompt),
-                                     tokens, n_tokens, true, true);
+                                     tokens, n_tokens);
     if (n_prompt_tokens < 0) {
         free(tokens);
         return input;
     }
 
     /* Process prompt in batches */
-    struct llama_batch batch = llama_batch_init(llm->config.batch_size, 0, 8);
+    struct llama_batch batch = llama_batch_init(llm->config.batch_size, 0, seq_capacity);
     for (int i = 0; i < n_prompt_tokens; i += llm->config.batch_size) {
         int n_eval = n_prompt_tokens - i;
         if (n_eval > llm->config.batch_size) n_eval = llm->config.batch_size;
@@ -245,18 +246,18 @@ static const char *bitnet_extract_words(nagi_llm_t *llm, const char *input)
     response_len = 0;
     gen_count = 0;
     max_extract_tokens = 10;
-    struct llama_batch batch_gen = llama_batch_init(1, 0, 8);
+    struct llama_batch batch_gen = llama_batch_init(1, 0, seq_capacity);
 
     while (response_len < (int)sizeof(response_buf) - 1 && gen_count < max_extract_tokens) {
         llama_token new_token = llama_sampler_sample(state->sampler, state->ctx, -1);
         llama_sampler_accept(state->sampler, new_token);
 
-        if (llama_token_is_eog(state->model, new_token)) {
+        if (LLAMA_IS_EOG(state->model, new_token)) {
             break;
         }
 
-        int piece_len = llama_token_to_piece(state->model,
-                                             new_token, piece, sizeof(piece), 0, true);
+        int piece_len = LLAMA_TOKEN_TO_PIECE(state->model,
+                                             new_token, piece, sizeof(piece));
         if (piece_len > 0 && response_len + piece_len < (int)sizeof(response_buf) - 1) {
             memcpy(response_buf + response_len, piece, piece_len);
             response_len += piece_len;
@@ -352,7 +353,8 @@ static int bitnet_matches_expected(nagi_llm_t *llm, const char *input,
         expected_command, input);
 
     /* Use rotating sequence IDs to avoid KV cache conflicts */
-    current_seq = (state->seq_counter++) % 8;
+    int seq_capacity = llm->config.n_seq_max > 0 ? llm->config.n_seq_max : 1;
+    current_seq = (state->seq_counter++) % seq_capacity;
 
     if (llm->config.verbose) {
         printf("\n=== BitNet Semantic Matching ===\n");
@@ -370,16 +372,16 @@ static int bitnet_matches_expected(nagi_llm_t *llm, const char *input,
     /* Tokenize */
     n_tokens = llama_n_ctx(state->ctx);
     tokens = (llama_token *)malloc(n_tokens * sizeof(llama_token));
-    n_prompt_tokens = llama_tokenize(state->model,
+    n_prompt_tokens = LLAMA_TOKENIZE(state->model,
                                      prompt, (int)strlen(prompt),
-                                     tokens, n_tokens, true, true);
+                                     tokens, n_tokens);
     if (n_prompt_tokens < 0) {
         free(tokens);
         return 0;
     }
 
     /* Process prompt */
-    struct llama_batch batch = llama_batch_init(llm->config.batch_size, 0, 8);
+    struct llama_batch batch = llama_batch_init(llm->config.batch_size, 0, seq_capacity);
     if (llm->config.verbose) {
         printf("Processing prompt: %d tokens\n", n_prompt_tokens);
     }
@@ -416,7 +418,7 @@ static int bitnet_matches_expected(nagi_llm_t *llm, const char *input,
     /* Generate response */
     response_len = 0;
     gen_count = 0;
-    struct llama_batch batch_gen = llama_batch_init(1, 0, 8);
+    struct llama_batch batch_gen = llama_batch_init(1, 0, seq_capacity);
     if (llm->config.verbose) {
         printf("Starting generation phase, prompt processed up to position %d\n", n_prompt_tokens - 1);
     }
@@ -424,15 +426,15 @@ static int bitnet_matches_expected(nagi_llm_t *llm, const char *input,
         llama_token new_token = llama_sampler_sample(state->sampler, state->ctx, -1);
         llama_sampler_accept(state->sampler, new_token);
 
-        if (llama_token_is_eog(state->model, new_token)) {
+        if (LLAMA_IS_EOG(state->model, new_token)) {
             if (llm->config.verbose) {
                 printf("Generation ended: EOG token after %d tokens\n", gen_count);
             }
             break;
         }
 
-        int piece_len = llama_token_to_piece(state->model,
-                                             new_token, piece, sizeof(piece), 0, true);
+        int piece_len = LLAMA_TOKEN_TO_PIECE(state->model,
+                                             new_token, piece, sizeof(piece));
         if (piece_len > 0 && response_len + piece_len < (int)sizeof(response_buf) - 1) {
             memcpy(response_buf + response_len, piece, piece_len);
             response_len += piece_len;
@@ -530,10 +532,11 @@ static int bitnet_generate_response(nagi_llm_t *llm, const char *game_response,
 
     /* Build prompt with explicit language */
     snprintf(prompt, sizeof(prompt), RESPONSE_GENERATION_PROMPT,
-             language, game_response);
+             language, user_input ? user_input : "", game_response);
 
     /* Use rotating sequence IDs */
-    current_seq = state->seq_counter++ % 8;
+    int seq_capacity = llm->config.n_seq_max > 0 ? llm->config.n_seq_max : 1;
+    current_seq = state->seq_counter++ % seq_capacity;
 
     if (llm->config.verbose) {
         printf("BitNet: Generating response in %s\n", language);
@@ -545,16 +548,16 @@ static int bitnet_generate_response(nagi_llm_t *llm, const char *game_response,
     /* Tokenize prompt */
     n_tokens = llama_n_ctx(state->ctx);
     tokens = (llama_token *)malloc(n_tokens * sizeof(llama_token));
-    n_prompt_tokens = llama_tokenize(state->model,
+    n_prompt_tokens = LLAMA_TOKENIZE(state->model,
                                      prompt, (int)strlen(prompt),
-                                     tokens, n_tokens, true, true);
+                                     tokens, n_tokens);
     if (n_prompt_tokens < 0) {
         free(tokens);
         return 0;
     }
 
     /* Process prompt in batches */
-    struct llama_batch batch = llama_batch_init(llm->config.batch_size, 0, 8);
+    struct llama_batch batch = llama_batch_init(llm->config.batch_size, 0, seq_capacity);
     for (int i = 0; i < n_prompt_tokens; i += llm->config.batch_size) {
         int n_eval = n_prompt_tokens - i;
         if (n_eval > llm->config.batch_size) n_eval = llm->config.batch_size;
@@ -584,18 +587,18 @@ static int bitnet_generate_response(nagi_llm_t *llm, const char *game_response,
     response_len = 0;
     gen_count = 0;
     max_response_tokens = 150;  /* Limit for adventure game responses */
-    struct llama_batch batch_gen = llama_batch_init(1, 0, 8);
+    struct llama_batch batch_gen = llama_batch_init(1, 0, seq_capacity);
 
     while (response_len < output_size - 1 && gen_count < max_response_tokens) {
         llama_token new_token = llama_sampler_sample(state->sampler_creative, state->ctx, -1);
         llama_sampler_accept(state->sampler_creative, new_token);
 
-        if (llama_token_is_eog(state->model, new_token)) {
+        if (LLAMA_IS_EOG(state->model, new_token)) {
             break;
         }
 
-        int piece_len = llama_token_to_piece(state->model,
-                                             new_token, piece, sizeof(piece), 0, true);
+        int piece_len = LLAMA_TOKEN_TO_PIECE(state->model,
+                                             new_token, piece, sizeof(piece));
         if (piece_len > 0 && response_len + piece_len < output_size - 1) {
             memcpy(output + response_len, piece, piece_len);
             response_len += piece_len;
@@ -681,7 +684,7 @@ nagi_llm_t *nagi_llm_bitnet_create(void)
     llm->config.verbose = 0;
     llm->config.mode = NAGI_LLM_MODE_EXTRACTION;
     llm->config.flash_attn = false;  /* BitNet works best without flash attention */
-    llm->config.n_seq_max = 1; //8;
+    llm->config.n_seq_max = 8;
     llm->backend = NAGI_LLM_BACKEND_BITNET;
 
     return llm;
