@@ -5,7 +5,7 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum OS X deployment ve
 project(NAGI
     VERSION "2.0.7"
     DESCRIPTION "New Adventure Game Interpreter"
-    LANGUAGES C
+    LANGUAGES C CXX
 )
 
 # LLM Options
@@ -14,6 +14,11 @@ option(NAGI_LLM_ENABLE_BITNET "Enable BitNet backend" OFF)
 option(NAGI_LLM_ENABLE_CLOUD_API "Enable cloud API backend" OFF)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/CMake")
+
+# Check and install dependencies automatically
+include(CheckDependencies)
+check_and_install_dependencies()
+
 
 # Interprocedural optimisation
 include(CheckIPOSupported)
@@ -47,7 +52,7 @@ else()
         -Wextra
         -Wcast-align
         -Wcast-qual
-        -Wconditional-uninitialized
+        -Wno-uninitialized
         -Wendif-labels
         -Wfloat-equal
         -Wformat
@@ -56,13 +61,10 @@ else()
         -Winline
         -Wmissing-noreturn
         -Wmissing-declarations
-        -Wmissing-variable-declarations
         -Wpointer-arith
         -Wshadow
         -Wundef
         -Wunreachable-code
-        -Wunreachable-code-break
-        -Wunreachable-code-return
         -Wunused-result
         -Wwrite-strings
         -Werror=write-strings

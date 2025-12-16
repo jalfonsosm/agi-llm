@@ -49,10 +49,14 @@ const char *get_word_string(nagi_llm_t *llm, int word_id)
         u16 offset = load_be_16(state->dictionary_data + i * 2);
         if (offset == 0) continue;
 
-        const u8 *ptr = state->dictionary_data + offset;
+        const u8 *ptr;
+        int words_in_section;
+        int len;
+        
+        ptr = state->dictionary_data + offset;
         buffer[0] = '\0';
-
-        int words_in_section = 0;
+        words_in_section = 0;
+        
         while (1) {
             u8 prefix_count = *ptr;
             if (words_in_section > 0 && prefix_count == 0) {
@@ -61,7 +65,7 @@ const char *get_word_string(nagi_llm_t *llm, int word_id)
 
             ptr++;
             words_in_section++;
-            int len = prefix_count;
+            len = prefix_count;
 
             /* Decode characters */
             while (1) {
@@ -88,7 +92,9 @@ const char *get_word_string(nagi_llm_t *llm, int word_id)
             buffer[len] = '\0';
 
             /* Read word ID */
-            u16 id = load_be_16(ptr);
+            u16 id;
+            
+            id = load_be_16(ptr);
 
             if (id == (u16)word_id) {
                 if (llm->config.verbose) {
@@ -131,19 +137,27 @@ const char *extract_game_verbs(nagi_llm_t *llm)
     }
 
     verb_list[0] = '\0';
-    int verb_count = 0;
-    int max_verbs = 50;  /* First ~50 words are usually verbs in AGI */
+    int verb_count;
+    int max_verbs;
+    int i;
+    
+    verb_count = 0;
+    max_verbs = 50;  /* First ~50 words are usually verbs in AGI */
 
     /* Iterate through all 26 letter offsets (A-Z) */
-    for (int i = 0; i < 26 && verb_count < max_verbs; i++) {
+    for (i = 0; i < 26 && verb_count < max_verbs; i++) {
         u16 offset = load_be_16(state->dictionary_data + i * 2);
+        const u8 *ptr;
+        char buffer[64];
+        int words_in_section;
+        int len;
+        
         if (offset == 0) continue;
 
-        const u8 *ptr = state->dictionary_data + offset;
-        char buffer[64];
+        ptr = state->dictionary_data + offset;
         buffer[0] = '\0';
-
-        int words_in_section = 0;
+        words_in_section = 0;
+        
         while (verb_count < max_verbs) {
             u8 prefix_count = *ptr;
 
@@ -154,7 +168,7 @@ const char *extract_game_verbs(nagi_llm_t *llm)
 
             ptr++;
             words_in_section++;
-            int len = prefix_count;
+            len = prefix_count;
 
             /* Decode characters */
             while (1) {

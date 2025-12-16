@@ -19,6 +19,7 @@ _Finish                          cseg     000002AE 00000015
 
 
 /* BASE headers	---	---	---	---	---	---	--- */
+extern "C" {
 #include "agi.h"
 
 /* LIBRARY headers	---	---	---	---	---	---	--- */
@@ -59,8 +60,7 @@ _Finish                          cseg     000002AE 00000015
 #include "sys/sys_dir.h"
 
 #include "list.h"
-
-
+}
 
 /* PROTOTYPES	---	---	---	---	---	---	--- */
 int main(int argc, char *argv[]);

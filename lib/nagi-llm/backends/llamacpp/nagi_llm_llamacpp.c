@@ -92,8 +92,11 @@ static int llamacpp_matches_expected(nagi_llm_t *llm, const char *input,
     }
 
     /* Clear KV cache for this sequence before use */
-    llama_memory_t mem = llama_get_memory(state->ctx);
-    bool cleared = llama_memory_seq_rm(mem, current_seq, -1, -1);
+    llama_memory_t mem;
+    bool cleared;
+    
+    mem = llama_get_memory(state->ctx);
+    cleared = llama_memory_seq_rm(mem, current_seq, -1, -1);
     if (llm->config.verbose) {
         printf("KV cache clear for seq %d: %s\n", current_seq, cleared ? "SUCCESS" : "FAILED");
     }
@@ -303,7 +306,9 @@ static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response
     }
 
     /* Clear KV cache completely for this sequence to prevent language contamination */
-    llama_memory_t mem = llama_get_memory(state->ctx);
+    llama_memory_t mem;
+    
+    mem = llama_get_memory(state->ctx);
     llama_memory_seq_rm(mem, current_seq, -1, -1);
 
     /* Tokenize prompt (add_special=false to avoid double BOS) */
@@ -428,20 +433,7 @@ static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response
     return response_len;
 }
 
-/* Common error setter */
-static void set_error(llm_state_t *state, const char *fmt, ...)
-{
-    va_list args;
-    va_start(args, fmt);
-    if (state) {
-        vsnprintf(state->last_error, sizeof(state->last_error), fmt, args);
-    } else {
-        char buf[256];
-        vsnprintf(buf, sizeof(buf), fmt, args);
-        fprintf(stderr, "LLM Error: %s\n", buf);
-    }
-    va_end(args);
-}
+/* set_error is defined in nagi_llm.c - using extern declaration */
 
 /*
  * Initialize the llama.cpp backend
@@ -646,7 +638,9 @@ static const char *llamacpp_extract_words(nagi_llm_t *llm, const char *input)
     }
 
     /* Clear KV cache for this sequence */
-    llama_memory_t mem = llama_get_memory(state->ctx);
+    llama_memory_t mem;
+    
+    mem = llama_get_memory(state->ctx);
     llama_memory_seq_rm(mem, current_seq, -1, -1);
 
     /* Tokenize prompt */

@@ -26,6 +26,10 @@ else()
     set(SDL3TTF_SAMPLES OFF CACHE BOOL "" FORCE)
     set(SDL3TTF_VENDORED ON CACHE BOOL "" FORCE)  # Use bundled FreeType
     set(SDL3TTF_INSTALL OFF CACHE BOOL "" FORCE)
+    
+    # Force use of vendored libraries
+    set(SDL3TTF_FREETYPE_VENDORED ON CACHE BOOL "" FORCE)
+    set(SDL3TTF_HARFBUZZ_VENDORED ON CACHE BOOL "" FORCE)
 
     # Don't treat warnings as errors for SDL3_ttf
     set(SDL3TTF_WERROR OFF CACHE BOOL "" FORCE)

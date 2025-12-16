@@ -19,7 +19,7 @@ if(NAGI_LLM_ENABLE_LLAMACPP)
         -DBUILD_SHARED_LIBS=OFF
         -DLLAMA_ALL_WARNINGS=OFF
         -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-        -DLLAMA_NATIVE=ON
+        -DGGML_NATIVE=ON
         -DLLAMA_ACCELERATE=ON
         -DLLAMA_FLASH_ATTN=ON
         -DLLAMA_CURL=OFF
@@ -71,7 +71,15 @@ if(NAGI_LLM_ENABLE_LLAMACPP)
         list(APPEND LLAMA_CMAKE_FLAGS -DVulkan_INCLUDE_DIR=${Vulkan_INCLUDE_DIRS})
         list(APPEND LLAMA_CMAKE_FLAGS -DVulkan_LIBRARY=${Vulkan_LIBRARIES})
     elseif(UNIX)
-        list(APPEND LLAMA_CMAKE_FLAGS -DGGML_VULKAN=ON)
+        # Try to find Vulkan, but make it optional
+        find_package(Vulkan QUIET)
+        if(Vulkan_FOUND AND Vulkan_glslc_FOUND)
+            list(APPEND LLAMA_CMAKE_FLAGS -DGGML_VULKAN=ON)
+            message(STATUS "Vulkan found - enabling GPU acceleration")
+        else()
+            list(APPEND LLAMA_CMAKE_FLAGS -DGGML_VULKAN=OFF)
+            message(STATUS "Vulkan not found or incomplete - using CPU only")
+        endif()
         list(APPEND LLAMA_CMAKE_FLAGS -DGGML_CUDA=OFF)
     endif()
         
@@ -199,9 +207,15 @@ if(NAGI_LLM_ENABLE_LLAMACPP)
             list(APPEND GGML_BACKEND_LIBS ${BLAS_LIB})
             message(STATUS "Metal and BLAS backends enabled for macOS")
         elseif(UNIX)
-            set(VULKAN_LIB ${LLAMA_BUILD_DIR}/ggml/src/ggml-vulkan/libggml-vulkan.a)
-            list(APPEND GGML_BACKEND_LIBS ${VULKAN_LIB})
-            message(STATUS "Vulkan backend enabled for Linux")
+            # Only add Vulkan if it was found during configuration
+            find_package(Vulkan QUIET)
+            if(Vulkan_FOUND AND Vulkan_glslc_FOUND)
+                set(VULKAN_LIB ${LLAMA_BUILD_DIR}/ggml/src/ggml-vulkan/libggml-vulkan.a)
+                list(APPEND GGML_BACKEND_LIBS ${VULKAN_LIB})
+                message(STATUS "Vulkan backend enabled for Linux")
+            else()
+                message(STATUS "Vulkan backend disabled - using CPU only")
+            endif()
         endif()
     endif()
 
@@ -245,11 +259,11 @@ if(NAGI_LLM_ENABLE_LLAMACPP)
         endif()
     elseif(UNIX)
         find_package(Vulkan QUIET)
-        if(Vulkan_FOUND)
+        if(Vulkan_FOUND AND Vulkan_glslc_FOUND)
             list(APPEND NAGI_LL_LIBS ${Vulkan_LIBRARIES})
             message(STATUS "Vulkan library found: ${Vulkan_LIBRARIES}")
         else()
-            message(WARNING "Vulkan SDK not found. Disable NAGI_LLM_USE_VULKAN or install Vulkan SDK")
+            message(STATUS "Vulkan SDK not found or incomplete - continuing with CPU-only build")
         endif()
     endif()
 

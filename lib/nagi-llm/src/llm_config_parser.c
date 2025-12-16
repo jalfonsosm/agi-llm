@@ -13,10 +13,12 @@
  */
 void trim_whitespace(char *str)
 {
+    char *start, *end;
+    
     if (!str) return;
 
     /* Trim leading whitespace */
-    char *start = str;
+    start = str;
     while (*start && isspace((unsigned char)*start)) {
         start++;
     }
@@ -27,7 +29,7 @@ void trim_whitespace(char *str)
     }
 
     /* Trim trailing whitespace */
-    char *end = str + strlen(str) - 1;
+    end = str + strlen(str) - 1;
     while (end > str && isspace((unsigned char)*end)) {
         *end = '\0';
         end--;
@@ -40,10 +42,13 @@ void trim_whitespace(char *str)
  */
 int parse_config_line(const char *line, char *key, char *value, int max_len)
 {
+    char temp[1024];
+    char *eq;
+    size_t key_len;
+    
     if (!line || !key || !value) return 0;
 
     /* Skip comments and empty lines */
-    char temp[1024];
     strncpy(temp, line, sizeof(temp) - 1);
     temp[sizeof(temp) - 1] = '\0';
     trim_whitespace(temp);
@@ -58,11 +63,11 @@ int parse_config_line(const char *line, char *key, char *value, int max_len)
     }
 
     /* Find = sign */
-    char *eq = strchr(temp, '=');
+    eq = strchr(temp, '=');
     if (!eq) return 0;
 
     /* Extract key */
-    size_t key_len = eq - temp;
+    key_len = eq - temp;
     if (key_len >= (size_t)max_len) key_len = max_len - 1;
     strncpy(key, temp, key_len);
     key[key_len] = '\0';
@@ -83,17 +88,20 @@ int parse_config_line(const char *line, char *key, char *value, int max_len)
 static int is_section_header(const char *line, char *section_name, int max_len)
 {
     char temp[256];
+    char *end;
+    size_t len;
+    
     strncpy(temp, line, sizeof(temp) - 1);
     temp[sizeof(temp) - 1] = '\0';
     trim_whitespace(temp);
 
     if (temp[0] != '[') return 0;
 
-    char *end = strchr(temp, ']');
+    end = strchr(temp, ']');
     if (!end) return 0;
 
     /* Extract section name */
-    size_t len = end - temp - 1;
+    len = end - temp - 1;
     if (len >= (size_t)max_len) len = max_len - 1;
     strncpy(section_name, temp + 1, len);
     section_name[len] = '\0';

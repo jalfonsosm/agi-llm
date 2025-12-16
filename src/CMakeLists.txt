@@ -3,6 +3,8 @@ add_executable(nagi)
 set_target_properties(nagi PROPERTIES
     C_STANDARD 11
     C_EXTENSIONS NO
+    CXX_STANDARD 17
+    CXX_EXTENSIONS NO
 )
 
 
@@ -34,7 +36,7 @@ set(base_sources
     list.h
     log.c
     log.h
-    nagi_main.c
+    nagi_main.cpp
     new_room.c
     new_room.h
     obj_show.c
@@ -258,11 +260,32 @@ if(NAGI_LLM_ENABLE_LLAMACPP OR NAGI_LLM_ENABLE_BITNET OR NAGI_LLM_ENABLE_CLOUD_A
         endif()
     elseif(NAGI_LLM_ENABLE_LLAMACPP)
         if(DEFINED MODEL_URL)
+            # Create download script that tries multiple methods
+            set(DOWNLOAD_SCRIPT "${CMAKE_BINARY_DIR}/download_model.sh")
+            file(WRITE "${DOWNLOAD_SCRIPT}" 
+"#!/bin/bash
+set -e
+URL='${MODEL_URL}'
+OUTPUT='${DEFAULT_MODEL_PATH}'
+echo 'Downloading LLM model to '\$OUTPUT'...'
+if command -v curl >/dev/null 2>&1; then
+    curl -f -L --retry 3 --ssl-no-revoke -o \"\$OUTPUT\" \"\$URL\"
+elif command -v wget >/dev/null 2>&1; then
+    wget -O \"\$OUTPUT\" \"\$URL\"
+elif command -v python3 >/dev/null 2>&1; then
+    python3 -c \"import urllib.request; urllib.request.urlretrieve('\$URL', '\$OUTPUT')\"
+else
+    echo 'Error: No download tool available (curl, wget, or python3)'
+    exit 1
+fi
+echo 'Download completed successfully'
+")
+            execute_process(COMMAND chmod +x "${DOWNLOAD_SCRIPT}")
+            
             add_custom_command(
                 OUTPUT "${DEFAULT_MODEL_PATH}"
                 COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/models"
-                COMMAND ${CMAKE_COMMAND} -E echo "Downloading LLM model to ${DEFAULT_MODEL_PATH}..."
-                COMMAND curl -f -L --retry 3 --ssl-no-revoke -o "${DEFAULT_MODEL_PATH}" "${MODEL_URL}"
+                COMMAND "${DOWNLOAD_SCRIPT}"
                 DEPENDS llama_cpp
                 COMMENT "Downloading LLM model..."
                 VERBATIM
@@ -295,12 +318,23 @@ endif()
 
 if((NAGI_LLM_ENABLE_LLAMACPP OR NAGI_LLM_ENABLE_BITNET) AND UNIX)
     target_link_libraries(nagi PRIVATE m dl pthread)
+    # Add OpenMP support
+    find_package(OpenMP)
+    if(OpenMP_C_FOUND)
+        target_link_libraries(nagi PRIVATE OpenMP::OpenMP_C)
+    endif()
 endif()
 
-if(APPLE)
-    target_link_libraries(nagi PRIVATE c++)
-elseif(NOT MSVC)
-    target_link_libraries(nagi PRIVATE stdc++)
+# Link C++ standard library for llama.cpp (C++ code)
+if(NAGI_LLM_ENABLE_LLAMACPP OR NAGI_LLM_ENABLE_BITNET)
+    if(APPLE)
+        target_link_libraries(nagi PRIVATE c++)
+    elseif(NOT MSVC)
+        # Link all necessary C++ libraries
+        target_link_libraries(nagi PRIVATE stdc++ gcc_s gcc gomp)
+        # Enable C++ language for proper linking
+        enable_language(CXX)
+    endif()
 endif()
 
 # Compile definitions (needed for strdup, strcasecmp on some systems)

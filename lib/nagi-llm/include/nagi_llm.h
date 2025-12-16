@@ -228,6 +228,13 @@ int nagi_llm_load_config(nagi_llm_config_t *config,
                          nagi_llm_backend_t backend,
                          const char *config_file);
 
+/*
+ * Utility functions
+ */
+void trim_whitespace(char *str);
+int parse_config_line(const char *line, char *key, char *value, int max_len);
+void set_error(llm_state_t *state, const char *fmt, ...);
+
 #ifdef __cplusplus
 }
 #endif
