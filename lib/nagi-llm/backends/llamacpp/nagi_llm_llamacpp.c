@@ -289,7 +289,7 @@ static int llamacpp_generate_response(nagi_llm_t *llm, const char *game_response
 
     /* Build prompt with explicit language, including user input for context */
     snprintf(prompt, sizeof(prompt), RESPONSE_GENERATION_PROMPT,
-             language, user_input ? user_input : "", game_response);
+             language, /*llm->config.personality,*/ user_input ? user_input : "", game_response);
 
     if (llm->config.verbose) {
         printf("Generating response in %s\n", language);
@@ -778,6 +778,8 @@ nagi_llm_t *nagi_llm_llamacpp_create(void)
     llm->config.verbose = 0;
     llm->config.mode = NAGI_LLM_MODE_EXTRACTION;
     llm->config.n_seq_max = 8;
+    strncpy(llm->config.personality, DEFAULT_PERSONALITY, sizeof(llm->config.personality) - 1);
+    llm->config.personality[sizeof(llm->config.personality) - 1] = '\0';
     llm->config.flash_attn = true;
     
     /* Assign function pointers */

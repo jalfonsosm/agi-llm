@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include "../include/nagi_llm.h"
+#include "../include/llm_utils.h"
 
 /*
  * Trim leading and trailing whitespace from a string
@@ -140,8 +141,11 @@ int nagi_llm_load_config(nagi_llm_config_t *config,
     config->top_p = 0.9f;
     config->top_k = 40;
     config->use_gpu = 1;
+    config->mode = NAGI_LLM_MODE_EXTRACTION;
     config->flash_attn = 0;
     config->n_seq_max = 1;
+    strncpy(config->personality, DEFAULT_PERSONALITY, sizeof(config->personality) - 1);
+    config->personality[sizeof(config->personality) - 1] = '\0';
 
     /* Use default filename if not specified */
     filename = config_file ? config_file : "llm_config.ini";
@@ -196,6 +200,9 @@ int nagi_llm_load_config(nagi_llm_config_t *config,
                 config->max_tokens = atoi(value);
             } else if (strcmp(key, "verbose") == 0) {
                 config->verbose = atoi(value);
+            } else if (strcmp(key, "personality") == 0) {
+                strncpy(config->personality, value, sizeof(config->personality) - 1);
+                config->personality[sizeof(config->personality) - 1] = '\0';
             }
         }
         /* Parse backend-specific settings */

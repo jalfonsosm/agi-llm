@@ -83,6 +83,23 @@ static const char *LANGUAGE_DETECTION_PROMPT_CLOUD =
     "Text: %s\n"
     "Language:";
 
+/*
+static const char *DEFAULT_PERSONALITY = "Try to keep the message as close as possible to the original.";
+
+static const char *RESPONSE_GENERATION_PROMPT =
+    START_OF_SYSTEM
+    "You are a narrator for a text adventure game. Translate game texts to %s. %s.\n\n"
+    "SPECIAL RULE: When you see 'I don't understand...' messages, DON'T translate literally.\n"
+    "Create a contextual response about what the player said.\n"
+    "Output ONLY your response."
+    END_OF_SYSTEM
+    START_OF_USER
+    "Player said: %s\n"
+    "Game says: %s"
+    END_OF_USER
+    START_OF_ASSISTANT;
+*/
+
 /* Response generation with explicit language */
 static const char *RESPONSE_GENERATION_PROMPT =
     START_OF_SYSTEM

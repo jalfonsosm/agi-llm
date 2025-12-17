@@ -131,6 +131,8 @@ nagi_llm_t *nagi_llm_cloud_create(void) {
     llm->config.temperature_creative_offset = 0.2f;
     llm->config.max_tokens = 512;
     llm->config.verbose = 0;
+    strncpy(llm->config.personality, DEFAULT_PERSONALITY, sizeof(llm->config.personality) - 1);
+    llm->config.personality[sizeof(llm->config.personality) - 1] = '\0';
     
     return llm;
 }
@@ -225,7 +227,7 @@ static int cloud_generate_response(nagi_llm_t *llm, const char *game_response,
     }
 
     snprintf(prompt, sizeof(prompt), RESPONSE_GENERATION_PROMPT,
-             language, user_input ? user_input : "", game_response);
+             language, /*llm->config.personality,*/ user_input ? user_input : "", game_response);
 
     return nagi_llm_cloud_generate(llm, prompt, output, output_size);
 }

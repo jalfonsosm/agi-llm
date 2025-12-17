@@ -75,6 +75,7 @@ typedef struct {
     nagi_llm_mode_t mode;                       /* LLM operation mode */
     int flash_attn;
     int n_seq_max;
+    char personality[512];                      /* how llm shold narrate the texts */
 
 } nagi_llm_config_t;
 

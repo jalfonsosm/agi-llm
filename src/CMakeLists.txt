@@ -316,24 +316,13 @@ else()
 endif()
 
 
-if((NAGI_LLM_ENABLE_LLAMACPP OR NAGI_LLM_ENABLE_BITNET) AND UNIX)
+if((NAGI_LLM_ENABLE_LLAMACPP OR NAGI_LLM_ENABLE_BITNET) AND UNIX AND NOT APPLE)
+    # Linux/Unix builds still need explicit libc helpers; macOS links them implicitly and warns on duplicates
     target_link_libraries(nagi PRIVATE m dl pthread)
     # Add OpenMP support
     find_package(OpenMP)
     if(OpenMP_C_FOUND)
         target_link_libraries(nagi PRIVATE OpenMP::OpenMP_C)
-    endif()
-endif()
-
-# Link C++ standard library for llama.cpp (C++ code)
-if(NAGI_LLM_ENABLE_LLAMACPP OR NAGI_LLM_ENABLE_BITNET)
-    if(APPLE)
-        target_link_libraries(nagi PRIVATE c++)
-    elseif(NOT MSVC)
-        # Link all necessary C++ libraries
-        target_link_libraries(nagi PRIVATE stdc++ gcc_s gcc gomp)
-        # Enable C++ language for proper linking
-        enable_language(CXX)
     endif()
 endif()
 

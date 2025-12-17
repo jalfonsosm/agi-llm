@@ -532,7 +532,7 @@ static int bitnet_generate_response(nagi_llm_t *llm, const char *game_response,
 
     /* Build prompt with explicit language */
     snprintf(prompt, sizeof(prompt), RESPONSE_GENERATION_PROMPT,
-             language, user_input ? user_input : "", game_response);
+             language, /*llm->config.personality,*/ user_input ? user_input : "", game_response);
 
     /* Use rotating sequence IDs */
     int seq_capacity = llm->config.n_seq_max > 0 ? llm->config.n_seq_max : 1;
@@ -685,6 +685,8 @@ nagi_llm_t *nagi_llm_bitnet_create(void)
     llm->config.mode = NAGI_LLM_MODE_EXTRACTION;
     llm->config.flash_attn = false;  /* BitNet works best without flash attention */
     llm->config.n_seq_max = 8;
+    strncpy(llm->config.personality, DEFAULT_PERSONALITY, sizeof(llm->config.personality) - 1);
+    llm->config.personality[sizeof(llm->config.personality) - 1] = '\0';
     llm->backend = NAGI_LLM_BACKEND_BITNET;
 
     return llm;
