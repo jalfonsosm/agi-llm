@@ -201,6 +201,14 @@ run.bat C:\path\to\game\directory
 - **Linux** (Vulkan)
 - **Windows** (Vulkan)
 
+## Build Status
+
+| Platform | Status | Notes |
+| --- | --- | --- |
+| macOS | ✅ Works | Metal renderer |
+| Linux | ⚠️ Builds | Testing vulkan support |
+| Windows | ✅ Works | Vulkan |
+
 ## License
 
 NAGI's source is released under the X11 license (compatible with GPL).
